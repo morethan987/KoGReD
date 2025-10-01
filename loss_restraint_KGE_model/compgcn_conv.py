@@ -1,5 +1,6 @@
-from helper import *
+from helper import get_param
 from loss_restraint_KGE_model.message_passing import MessagePassing
+
 
 class CompGCNConv(MessagePassing):
 	def __init__(self, in_channels, out_channels, num_rels, act=lambda x:x, params=None):
@@ -23,7 +24,7 @@ class CompGCNConv(MessagePassing):
 
 		if self.p.bias: self.register_parameter('bias', Parameter(torch.zeros(out_channels)))
 
-	def forward(self, x, edge_index, edge_type, rel_embed): 
+	def forward(self, x, edge_index, edge_type, rel_embed):
 		if self.device is None:
 			self.device = edge_index.device
 
@@ -39,7 +40,7 @@ class CompGCNConv(MessagePassing):
 
 		self.in_norm     = self.compute_norm(self.in_index,  num_ent)
 		self.out_norm    = self.compute_norm(self.out_index, num_ent)
-		
+
 		in_res		= self.propagate('add', self.in_index,   x=x, edge_type=self.in_type,   rel_embed=rel_embed, edge_norm=self.in_norm, 	mode='in')
 		loop_res	= self.propagate('add', self.loop_index, x=x, edge_type=self.loop_type, rel_embed=rel_embed, edge_norm=None, 		mode='loop')
 		out_res		= self.propagate('add', self.out_index,  x=x, edge_type=self.out_type,  rel_embed=rel_embed, edge_norm=self.out_norm,	mode='out')

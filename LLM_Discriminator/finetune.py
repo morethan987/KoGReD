@@ -17,14 +17,13 @@ from peft import (
 from transformers import AutoModelForCausalLM, AutoTokenizer
 # from transformers import LlamaForCausalLM, LlamaTokenizer
 
-from utils.prompter import Prompter
-
 
 def train(
     # model/data params
     base_model: str = "",  # the only required argument
     data_path: str = "YOUR LLM PATH",
     output_dir: str = "./lora-alpaca",
+    root_dir: str = "./",
     # training hyperparams
     batch_size: int = 16,
     micro_batch_size: int = 16,
@@ -83,12 +82,11 @@ def train(
             f"prompt template: {prompt_template_name}\n"
             f"kge model: {kge_model}\n"
         )
-    assert (
-        base_model
-    ), "Please specify a --base_model, e.g. --base_model='huggyllama/llama-7b'"
-    gradient_accumulation_steps = batch_size // micro_batch_size
+    sys.path.append(root_dir)
+    from MCTS.prompts import ALPACA_PROMPT
 
-    prompter = Prompter(prompt_template_name)
+    assert (base_model), "Please specify a --base_model, e.g. --base_model='huggyllama/llama-7b'"
+    gradient_accumulation_steps = batch_size // micro_batch_size
 
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
@@ -99,11 +97,7 @@ def train(
         torch_dtype=torch.bfloat16,
         device_map=f'npu:{local_rank}',
     )
-    print(f"æ¨¡åž‹æˆåŠŸåŠ è½½åˆ° NPU è®¾å¤‡ npu:{local_rank}")
-
-    # if hasattr(torch_npu, 'npu') and torch_npu.npu.is_available():
-    #     model = model.to(f'npu:{local_rank}')
-    #     print(f"å°†æ¨¡åž‹ç§»åŠ¨åˆ° NPU è®¾å¤‡ npu:{local_rank} æˆåŠŸ")
+    print(f"Successfully load model on npu:{local_rank}")
 
     tokenizer = AutoTokenizer.from_pretrained(base_model)
 
@@ -135,15 +129,15 @@ def train(
         return result
 
     def generate_and_tokenize_prompt(data_point):
-        full_prompt = prompter.generate_prompt(
-            data_point["instruction"],
-            data_point["input"],
-            data_point["output"],
+        full_prompt = ALPACA_PROMPT.format(
+            input=data_point["input"],
+            output=data_point["output"]
         )
         tokenized_full_prompt = tokenize(full_prompt)
         if not train_on_inputs:
-            user_prompt = prompter.generate_prompt(
-                data_point["instruction"], data_point["input"]
+            user_prompt = ALPACA_PROMPT.format(
+                input=data_point["input"],
+                output=""
             )
             tokenized_user_prompt = tokenize(
                 user_prompt, add_eos_token=add_eos_token
@@ -153,14 +147,8 @@ def train(
             if add_eos_token:
                 user_prompt_len -= 1
 
-            tokenized_full_prompt["labels"] = [
-                -100
-            ] * user_prompt_len + tokenized_full_prompt["labels"][
-                user_prompt_len:
-            ]  # could be sped up, probably
+            tokenized_full_prompt["labels"] = [-100] * user_prompt_len + tokenized_full_prompt["labels"][user_prompt_len:]
         return tokenized_full_prompt
-
-    # model = prepare_model_for_int8_training(model)
 
     config = LoraConfig(
         r=lora_r,
@@ -203,7 +191,7 @@ def train(
             print(f"Checkpoint {checkpoint_name} not found")
 
     # Be more transparent about the % of trainable params.
-    # model.print_trainable_parameters()
+    model.print_trainable_parameters()
 
     if val_set_size > 0:
         train_val = data["train"].train_test_split(
@@ -262,8 +250,7 @@ def train(
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     model.save_pretrained(output_dir)
-    torch.save(slama_model.embeddings, os.path.join(
-        output_dir, "embeddings.pth"))
+    torch.save(slama_model.embeddings, os.path.join(output_dir, "embeddings.pth"))
 
     print(
         "\n If there's a warning about missing keys above, please disregard :)"

@@ -1,12 +1,12 @@
-from kg_enhancer import KGEnhancer
-from utils import init_distributed, cleanup_distributed, shard_indices, get_device
-from setup_logger import setup_logger
-import torch
-import torch_npu
-import torch.distributed as dist
 import os
-import argparse
+import json
+import torch
+from setup_logger import setup_logger, rank_logger
+from utils import init_distributed, cleanup_distributed, shard_indices, get_device
+import torch.distributed as dist
 from tqdm.auto import tqdm
+from transformers.utils import logging
+logging.set_verbosity_error()
 
 
 class Runner:
@@ -14,24 +14,33 @@ class Runner:
         self.args = args
         self.data_folder = args.data_folder
         self.logger = setup_logger(self.__class__.__name__)
+        self.checkpoint_file = os.path.join(args.output_folder, f"checkpoint_rank_{self.rank}.json")
 
-        # åˆ�å§‹åŒ–åˆ†å¸ƒå¼�çŽ¯å¢ƒ
-        self.is_initialed = init_distributed()
-
-        # èŽ·å�–åˆ†å¸ƒå¼�ä¿¡æ�¯
+        # 获取分布式信息
         self.rank = int(os.environ.get("RANK", 0))
         self.local_rank = int(os.environ.get("LOCAL_RANK", 0))
         self.world_size = int(os.environ.get("WORLD_SIZE", 1))
         self.device = get_device(self.local_rank)
+        if self.device.string.startswith('npu'):
+            torch.npu.set_device(self.device)
+        elif self.device.string.startswith('cuda'):
+            torch.cuda.set_device(self.device)
+
+        # 初始化分布式环境
+        self.is_initialed = init_distributed(
+            self.rank, self.local_rank, self.world_size
+        )
 
         self.correct_relations = torch.load(
             f"{self.args.output_folder}/correct_relations.pth"
         )
 
         self.enhancer = KGEnhancer(
+            rank=self.rank,
             entity2name_path=f"{self.data_folder}/entity2name.txt",
             relation2id_path=f"{self.data_folder}/relation2id.txt",
             entity2id_path=f"{self.data_folder}/entity2id.txt",
+            entity2embedding_path=self.args.entity2embedding_path,
             entity2description_path=f"{self.data_folder}/entity2des.txt",
             kg_path=f"{self.data_folder}/train.txt",
             budget_per_entity=self.args.budget_per_entity,
@@ -41,15 +50,50 @@ class Runner:
             llm_path=self.args.llm_path,
             lora_path=self.args.lora_path,
             embedding_path=self.args.embedding_path,
+            kge_path=self.args.kge_path,
             dtype=self.args.dtype,
             device=self.device)
 
         self.all_discovered_triplets = []
+        self.processed_entities = set()
+        self.local_discovered_triplets = []
+
+        # 加载检查点
+        self.load_checkpoint()
+
+    def load_checkpoint(self):
+        """加载检查点"""
+        if os.path.exists(self.checkpoint_file):
+            try:
+                with open(self.checkpoint_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.processed_entities = set(data.get("processed_entities", []))
+                    # 加载已发现的三元组
+                    saved_triplets = data.get("discovered_triplets", [])
+                    self.local_discovered_triplets.extend(saved_triplets)
+
+                rank_logger(self.logger, self.rank)(f"Loaded checkpoint: {len(self.processed_entities)} entities processed, {len(saved_triplets)} triplets discovered.")
+            except Exception as e:
+                rank_logger(self.logger, self.rank)(f"Failed to load checkpoint: {e}, starting from scratch.")
+
+    def save_checkpoint(self):
+        """保存检查点"""
+        data = {
+            "processed_entities": list(self.processed_entities),
+            "discovered_triplets": self.local_discovered_triplets,
+            "entity_count": len(self.processed_entities),
+            "triplet_count": len(self.local_discovered_triplets)
+        }
+        try:
+            with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            rank_logger(self.logger, self.rank)(f"Checkpoint saved: {len(self.processed_entities)} entities processed, {len(self.local_discovered_triplets)} triplets discovered.")
+        except Exception as e:
+            rank_logger(self.logger, self.rank)(f"Failed to save checkpoint: {e}")
 
     def run(self):
         items = list(self.correct_relations.items())
-        indices = shard_indices(
-            len(items), self.world_size, self.rank)
+        indices = shard_indices(len(items), self.rank, self.world_size)
         local_data = [items[i] for i in indices]
 
         progress = tqdm(
@@ -57,56 +101,79 @@ class Runner:
             desc=f"Processing (rank {self.rank})",
             disable=(self.rank != 0),
         )
-        local_output = []
+
+        checkpoint_counter = 0
+        processed_count_since_last_save = 0
+
         for entity_idx, (entity, position_relations) in enumerate(local_data):
-            self.logger.info(f"\n{'='*50}")
-            self.logger.info(
+            if entity in self.processed_entities:
+                rank_logger(self.logger, self.rank)(f"Skipping already processed entity: {entity}")
+                progress.update(1)
+                continue
+
+            rank_logger(self.logger, self.rank)(f"\n{'='*50}")
+            rank_logger(self.logger, self.rank)(
                 f"Processing sparse entity {entity_idx + 1}/{len(items)}: {entity}"
             )
-            self.logger.info(
+            rank_logger(self.logger, self.rank)(
                 f"Position-relation pairs: {len(position_relations)}")
-            # TODO: ç›®å‰�æ˜¯å¯¹æ¯�ä¸€ä¸ªä½�ç½®-å…³ç³»å¯¹å�•ç‹¬è¿›è¡ŒMCTSæ�œç´¢ï¼Œåº”è¯¥æŠŠå…³ç³»å¯¹çš„é€‰æ‹©ä¹Ÿæ”¾åˆ°MCTSä¸­
-            for pos_rel_idx, (position, relation) in enumerate(position_relations):
-                self.logger.info(f"\nProcessing pair {pos_rel_idx + 1}/{len(position_relations)}: "
-                                 f"position={position}, relation={relation}"
-                                 )
 
-                # ä½¿ç”¨MCTSæ�œç´¢è¯¥å®žä½“-ä½�ç½®-å…³ç³»ç»„å�ˆçš„æ­£ç¡®ä¸‰å…ƒç»„
+            entity_triplets = []
+            for pos_rel_idx, (position, relation) in enumerate(position_relations):
+                rank_logger(self.logger, self.rank)(
+                    f"\nProcessing pair {pos_rel_idx + 1}/{len(position_relations)}: position={position}, relation={relation}")
+
                 discovered = self.enhancer.enhance_entity_relation(
                     entity, position, relation
                 )
 
-                local_output.extend(discovered)
-                self.logger.info(
+                entity_triplets.extend(discovered)
+                self.local_discovered_triplets.extend(discovered)
+                rank_logger(self.logger, self.rank)(
                     f"Discovered {len(discovered)} valid triplets for {entity}-{position}-{relation}")
+
+            # 标记为已处理
+            self.processed_entities.add(entity)
+            processed_count_since_last_save += 1
+
+            # 每处理一定数量的实体保存一次检查点
+            if processed_count_since_last_save >= self.args.checkpoint_interval:
+                self.save_checkpoint()
+                processed_count_since_last_save = 0
+
+            progress.update(1)
 
         progress.close()
 
-        # æ”¶é›†æ‰€æœ‰è¿›ç¨‹çš„ç»“æžœ
+        # 保存最终检查点
+        self.save_checkpoint()
+
+        # 收集所有进程的结果
         if self.is_initialed:
             gathered = [None] * self.world_size if self.rank == 0 else None
-            dist.all_gather_object(local_output, gathered, dest=0)
+            dist.all_gather_object(self.local_discovered_triplets, gathered, dest=0)
             if self.rank == 0:
                 for triplet_list in gathered:
                     self.all_discovered_triplets.extend(triplet_list)
             else:
                 return
         else:
-            self.all_discovered_triplets = local_output
+            self.all_discovered_triplets = self.local_discovered_triplets
 
-        # ä¿�å­˜æ‰€æœ‰å�‘çŽ°çš„ä¸‰å…ƒç»„
+        # 保存所有发现的三元组
         output_path = os.path.join(
             self.args.output_folder, "discovered_triplets.txt"
         )
         os.makedirs(self.args.output_folder, exist_ok=True)
-        self.logger.info(
+        rank_logger(self.logger, self.rank)(
             f"\nSaving {len(self.all_discovered_triplets)} discovered triplets to {output_path}"
         )
         with open(output_path, 'w', encoding='utf-8') as f:
             for head, rel, tail in self.all_discovered_triplets:
                 f.write(f"({head}\t{rel}\t{tail})\n")
 
-        self.logger.info("Knowledge graph enhancement completed successfully!")
+        rank_logger(self.logger, self.rank)(
+            "Knowledge graph enhancement completed successfully!")
 
 
 if __name__ == "__main__":
@@ -155,11 +222,26 @@ if __name__ == "__main__":
         "--embedding_path", type=str, required=True, help="Path to the kg embeddings"
     )
     parser.add_argument(
+        "--entity2embedding_path", type=str, required=True, help="entity2embedding file path",
+    )
+    parser.add_argument(
         "--kge_path", type=str, required=True, help="Path to the KGE model"
+    )
+    parser.add_argument(
+        "--discriminator_folder", type=str, required=True, help="Discriminator module name"
+    )
+    parser.add_argument(
+        "--checkpoint_interval", type=int, default=10, help="Save checkpoint every N entities"
     )
     args = parser.parse_args()
 
-    # åˆ›å»ºå¹¶è¿�è¡ŒRunner
+    # 添加上级目录到sys.path以导入自定义模块
+    sys.path.append(args.discriminator_folder)
+
+    # 延迟导入
+    from kg_enhancer import KGEnhancer
+
+    # 创建并运行Runner
     runner = Runner(args)
     runner.run()
 

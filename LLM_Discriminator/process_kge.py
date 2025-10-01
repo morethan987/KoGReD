@@ -4,7 +4,7 @@ import torch
 def load_pretrain_kge(path):  # 获取kge模型训练后得到的 ent_embedding和 rel_enbemdding
     if "complex" in path:
         return load_complex_model(path)
-    kge_model = torch.load(path)
+    kge_model = torch.load(path, map_location="cpu")
     ent_embs = torch.tensor(kge_model["ent_embeddings.weight"]).cpu()  # ent_embs.shape=[14541, 1024]  当path=data/FB15K-237N-rotate.pth
     rel_embs = torch.tensor(kge_model["rel_embeddings.weight"]).cpu()  # rel_embs.shape=[237, 512]
     ent_embs.requires_grad = False

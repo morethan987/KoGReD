@@ -38,3 +38,17 @@ Group 3: entity7, entity8, entity9
 
 Base your grouping on semantic similarity and relevance to the sparse entity and relation.
 """
+
+
+ALPACA_PROMPT = """
+Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
+
+### Instruction:
+Given a triple from a knowledge graph. Each triple consists of a head entity, a relation, and a tail entity. Please determine the correctness of the triple and response True or False.
+
+### Input:
+{input}
+
+### Response:
+{output}
+"""

@@ -9,8 +9,12 @@ from setup_logger import logging
 logger = logging.getLogger(__name__)
 
 
-def get_sparse_entities(dataset, sparse_threshold: float = 1.1e-5):
-    """返回稀疏实体列表"""
+def get_sparse_entities(dataset, sparse_threshold: float = 9e-4):
+    """
+    返回稀疏实体列表
+    for fb15k-237n, threshold=9e-4
+    for codex-s, threshold=5e-4
+    """
     count = {}
     with open(f"{dataset}/train.txt", "r", encoding="utf-8") as file:
         lines = file.readlines()
@@ -76,11 +80,9 @@ def get_device(local_rank: int):
     return device
 
 
-def init_distributed():
+def init_distributed(rank, local_rank, world_size):
     """初始化单机多卡分布式环境"""
     if is_distributed():
-        rank, local_rank, world_size = ddp_setup()
-
         # 根据设备类型选择后端
         if torch.npu.is_available():
             backend = 'hccl'  # 华为NPU使用hccl后端

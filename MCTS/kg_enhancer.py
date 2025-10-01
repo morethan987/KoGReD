@@ -1,8 +1,9 @@
 from typing import List, Dict, Tuple, Optional
 
 from kg_data_loader import KGDataLoader
+from model_calls import OpenKEClient
 from mcts_tree import MCTS
-from node import SearchRootNode
+from node import SearchRootNode, Context
 from LLM_Discriminator.discriminator import TriplesDiscriminator
 from setup_logger import setup_logger
 
@@ -11,6 +12,7 @@ class KGEnhancer:
     """知识图谱增强器：为稀疏结点搜索新的三元组关系"""
 
     def __init__(self,
+                 rank: int = 0,
                  entity2name_path: str,
                  relation2id_path: str,
                  entity2id_path: str,
@@ -18,9 +20,10 @@ class KGEnhancer:
                  kg_path: str,
                  budget_per_entity: int = 1000,
                  mcts_iterations: int = 50,
-                 leaf_threshold: int = 10,
+                 leaf_threshold: int = 32,
                  exploration_weight: float = 1.0,
                  llm_path: str = "path/to/llm",
+                 kge_path: str = "path/to/kge/model",
                  lora_path: str = None,
                  embedding_path: str = None,
                  device: str = "cuda",
@@ -56,6 +59,14 @@ class KGEnhancer:
             entity2id_path=entity2id_path,
             entity2description_path=entity2description_path,
             kg_path=kg_path
+        )
+
+        # 初始化OpenKE客户端
+        self.logger.info("Initializing OpenKE client...")
+        self.kge_model = OpenKEClient(
+            path=kge_path,
+            model_name="RotatE",
+            rank=self.rank
         )
 
         # 初始化三元组判别器
@@ -97,16 +108,20 @@ class KGEnhancer:
         self.logger.info(
             f"Total candidate entities: {len(candidate_entities)}")
 
-        # 创建搜索根节点
-        root_node = SearchRootNode(
+        # 构建上下文信息
+        context = Context(
             sparse_entity=sparse_entity,
-            position=position,
             relation=relation,
-            candidate_entities=candidate_entities,
+            position=position,
             data_loader=self.data_loader,
             triplet_discriminator=self.triplet_discriminator,
-            leaf_threshold=self.leaf_threshold
+            kge_model=self.kge_model,
+            leaf_threshold=self.leaf_threshold,
+            parent=None
         )
+
+        # 创建搜索根节点
+        root_node = SearchRootNode(context=context)
 
         # 重置MCTS状态
         self.mcts.reset()

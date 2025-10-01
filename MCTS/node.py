@@ -4,88 +4,112 @@ from typing import Set, List, Tuple, Optional
 
 from kg_data_loader import KGDataLoader
 from LLM_Discriminator.discriminator import TriplesDiscriminator
-from model_calls import RemoteLLM
 from setup_logger import setup_logger
 from prompts import SEMANTIC_ANALYSIS
 
 
-class SearchNode(ABC):
-    """æ�œç´¢èŠ‚ç‚¹æŠ½è±¡åŸºç±»"""
+@dataclass
+class Context:
+    sparse_entity: str
+    position: str
+    relation: str
+    unfiltered_entities: Set[str]
+    data_loader: KGDataLoader
+    triplet_discriminator: TriplesDiscriminator
+    kge_model: KGEModel
+    leaf_threshold: int
+    parent: Optional['SearchNode'] = None
 
-    def __init__(self,
-                 sparse_entity: str,
-                 position: str,
-                 relation: str,
-                 candidate_entities: Set[str],
-                 data_loader: KGDataLoader,
-                 triplet_discriminator: TriplesDiscriminator,
-                 leaf_threshold: int,
-                 parent: Optional['SearchNode'] = None):
+class SearchNode(ABC):
+    """搜索节点抽象基类"""
+
+    def __init__(self, context: Context):
         """
-        åˆ�å§‹åŒ–æ�œç´¢èŠ‚ç‚¹
+        初始化搜索节点
 
         Args:
-            sparse_entity: ç¨€ç–�å®žä½“ID
-            position: å®žä½“åœ¨ä¸‰å…ƒç»„ä¸­çš„ä½�ç½® ('head' æˆ– 'tail')
-            relation: å…³ç³»ç±»åž‹
-            candidate_entities: å€™é€‰ç›®æ ‡å®žä½“é›†å�ˆ
-            data_loader: æ•°æ�®åŠ è½½å™¨
-            triplet_discriminator: ä¸‰å…ƒç»„åˆ¤åˆ«å™¨
-            leaf_threshold: å�¶å­�èŠ‚ç‚¹é˜ˆå€¼
-            parent: çˆ¶èŠ‚ç‚¹
+            sparse_entity: 稀疏实体ID
+            position: 实体在三元组中的位置 ('head' 或 'tail')
+            relation: 关系类型
+            unfiltered_entities: 候选目标实体集合
+            data_loader: 数据加载器
+            triplet_discriminator: 三元组判别器
+            leaf_threshold: 叶子节点阈值
+            parent: 父节点
         """
-        self.sparse_entity = sparse_entity
-        self.position = position
-        self.relation = relation
-        self.candidate_entities = candidate_entities
-        self.data_loader = data_loader
-        self.triplet_discriminator = triplet_discriminator
-        self.leaf_threshold = leaf_threshold
-        self.parent = parent
+        self.sparse_entity = context.sparse_entity
+        self.position = context.position
+        self.relation = context.relation
+        self.unfiltered_entities = context.unfiltered_entities
+        self.candidate_entities = set()
+        self.data_loader = context.data_loader
+        self.triplet_discriminator = context.triplet_discriminator
+        self.kge_model = context.kge_model
+        self.leaf_threshold = context.leaf_threshold
+        self.parent = context.parent
         self.children = None
         self.logger = setup_logger(f"{self.__class__.__name__}")
 
     @abstractmethod
+    def _filter(self):
+        """过滤候选实体，产生新的候选实体集合"""
+        pass
+
     def find_children(self) -> Set['SearchNode']:
-        """æŸ¥æ‰¾å­�èŠ‚ç‚¹"""
-        pass
+        """查找子节点"""
+        if self.children is None:
+            return set()
+        return self.children
 
-    @abstractmethod
-    def find_random_child(self) -> Optional['SearchNode']:
-        """éš�æœºé€‰æ‹©ä¸€ä¸ªå­�èŠ‚ç‚¹"""
-        pass
+    def find_random_child(self) -> 'SearchNode':
+        """随机选择一个子节点"""
+        return random.choice([KGENode, GraphNode, LLMNode])(self._make_child_context())
 
-    @abstractmethod
     def expand(self):
-        """æ‰©å±•èŠ‚ç‚¹ï¼Œç”Ÿæˆ�å­�èŠ‚ç‚¹"""
-        pass
+        """扩展根节点，生成不同的过滤策略子节点"""
+        if self.children is not None:
+            return
+
+        self.children = set()
+
+        # 生成背景信息
+        child_context = self._make_child_context()
+
+        # 1. 基于知识图谱结构的过滤节点
+        self.children.add(GraphNode(child_context))
+
+        # 2. 基于KGE模型的过滤节点
+        self.children.add(KGENode(child_context))
+
+        # 3. 基于LLM的过滤节点
+        self.children.add(LLMNode(child_context))
 
     def is_terminal(self) -> bool:
-        """åˆ¤æ–­æ˜¯å�¦ä¸ºç»ˆç«¯èŠ‚ç‚¹ï¼ˆå€™é€‰å®žä½“æ•°é‡�å°�äºŽé˜ˆå€¼ï¼‰"""
+        """判断是否为终端节点（候选实体数量小于阈值）"""
         return len(self.candidate_entities) <= self.leaf_threshold
 
     def evaluate_candidates(self) -> Tuple[List[Tuple[str, str, str]], int]:
         """
-        è¯„ä¼°å€™é€‰å®žä½“ï¼Œè¿”å›žæ­£ç¡®çš„ä¸‰å…ƒç»„
+        评估候选实体，返回正确的三元组
 
         Returns:
-            (æ­£ç¡®çš„ä¸‰å…ƒç»„åˆ—è¡¨, ä½¿ç”¨çš„åˆ†ç±»å™¨è°ƒç”¨æ¬¡æ•°)
+            (正确的三元组列表, 使用的分类器调用次数)
         """
         correct_triplets = []
         budget_used = 0
 
         for entity in self.candidate_entities:
-            # æž„é€ ä¸‰å…ƒç»„
+            # 构造三元组
             if self.position == 'head':
                 triplet = (self.sparse_entity, self.relation, entity)
             else:  # position == 'tail'
                 triplet = (entity, self.relation, self.sparse_entity)
 
-            # è·³è¿‡å·²å­˜åœ¨çš„ä¸‰å…ƒç»„
+            # 跳过已存在的三元组
             if self.data_loader.triplet_exists(*triplet):
                 continue
 
-            # ä½¿ç”¨åˆ†ç±»å™¨åˆ¤æ–­
+            # 使用分类器判断
             if self.triplet_discriminator.judge_one(self._preprocess_triplet(triplet)):
                 correct_triplets.append(triplet)
 
@@ -96,9 +120,22 @@ class SearchNode(ABC):
 
         return correct_triplets, budget_used
 
+    def _make_child_context(self) -> Context:
+        return Context(
+            sparse_entity=self.sparse_entity,
+            position=self.position,
+            relation=self.relation,
+            unfiltered_entities=self.candidate_entities,
+            data_loader=self.data_loader,
+            triplet_discriminator=self.triplet_discriminator,
+            kge_model=self.kge_model,
+            leaf_threshold=self.leaf_threshold,
+            parent=self
+        )
+
     def _preprocess_triplet(self, triplet: Tuple[str, str, str]) -> dict:
         """
-        é¢„å¤„ç�†ä¸‰å…ƒç»„ï¼Œè½¬åŒ–ä¸ºdicriminatoréœ€è¦�çš„æ ¼å¼�
+        预处理三元组，转化为dicriminator需要的格式
 
         Output:
             {
@@ -107,7 +144,13 @@ class SearchNode(ABC):
             }
         """
         head_code, rel_code, tail_code = triplet
-        input_text = f"The input triple: \n( {self.data_loader.entity2name.get(head_code, head_code).replace('_', ' ')}, {rel_code.replace('/', ' ')}, {self.data_loader.entity2name.get(tail_code, tail_code).replace('_', ' ')} )\n"
+        input_text = "The input triple: \n( {head}, {rel}, {tail} )\n".format(
+            head=self.data_loader.entity2name.get(
+                head_code, head_code).replace('_', ' '),
+            rel=rel_code.replace('/', ' '),
+            tail=self.data_loader.entity2name.get(
+                tail_code, tail_code).replace('_', ' ')
+        )
         embedding_ids = [self.data_loader.entity2id[head_code],
                          self.data_loader.relation2id[rel_code],
                          self.data_loader.entity2id[tail_code]]
@@ -173,379 +216,281 @@ class SearchRootNode(SearchNode):
         ))
 
 
-class NeighborFilterNode(SearchNode):
-    """åŸºäºŽé‚»å±…å…³ç³»çš„è¿‡æ»¤èŠ‚ç‚¹"""
+class KGENode(SearchNode):
+    """基于KGE模型的过滤策略节点"""
 
-    def find_children(self) -> Set[SearchNode]:
-        if self.children is None:
+    def __init__(self, context: Context):
+        super().__init__(context)
+        self.candidate_entities = self._filter()
+
+    def _filter(self) -> Set[str]:
+        """基于KGE模型的打分结果进行过滤，保留得分前p比例的实体"""
+        if not self.unfiltered_entities:
             return set()
-        return self.children
 
-    def find_random_child(self) -> Optional[SearchNode]:
-        if self.children:
-            return random.choice(list(self.children))
-        return None
+        # 获取当前实体和关系的ID
+        sparse_entity_id = self.data_loader.entity2id.get(self.sparse_entity)
+        relation_id = self.data_loader.relation2id.get(self.relation)
 
-    def expand(self):
-        """æ ¹æ�®é‚»å±…å…³ç³»åˆ’åˆ†å€™é€‰å®žä½“"""
-        if self.children is not None:
-            return
-
-        self.children = set()
-
-        # èŽ·å�–ç¨€ç–�å®žä½“çš„ä¸€è·³å’ŒäºŒè·³é‚»å±…
-        one_hop_neighbors = self.data_loader.get_one_hop_neighbors(
-            self.sparse_entity)
-        two_hop_neighbors = self.data_loader.get_two_hop_neighbors(
-            self.sparse_entity)
-
-        # æ ¹æ�®ä¸Žç¨€ç–�å®žä½“çš„è·�ç¦»å…³ç³»åˆ’åˆ†å€™é€‰å®žä½“
-        one_hop_candidates = self.candidate_entities & one_hop_neighbors
-        two_hop_candidates = self.candidate_entities & two_hop_neighbors
-        other_candidates = self.candidate_entities - \
-            one_hop_neighbors - two_hop_neighbors
-
-        # åˆ›å»ºå­�èŠ‚ç‚¹
-        if one_hop_candidates:
-            self.children.add(LeafNode(
-                sparse_entity=self.sparse_entity,
-                position=self.position,
-                relation=self.relation,
-                candidate_entities=one_hop_candidates,
-                data_loader=self.data_loader,
-                triplet_discriminator=self.triplet_discriminator,
-                leaf_threshold=self.leaf_threshold,
-                parent=self,
-                node_type="one_hop"
-            ))
-
-        if two_hop_candidates:
-            self.children.add(LeafNode(
-                sparse_entity=self.sparse_entity,
-                position=self.position,
-                relation=self.relation,
-                candidate_entities=two_hop_candidates,
-                data_loader=self.data_loader,
-                triplet_discriminator=self.triplet_discriminator,
-                leaf_threshold=self.leaf_threshold,
-                parent=self,
-                node_type="two_hop"
-            ))
-
-        if other_candidates:
-            # å¦‚æžœå…¶ä»–å€™é€‰å®žä½“è¿‡å¤šï¼Œè¿›ä¸€æ­¥éš�æœºåˆ’åˆ†
-            if len(other_candidates) > self.leaf_threshold * 3:
-                # éš�æœºåˆ’åˆ†ä¸ºå¤šä¸ªå­�é›†
-                candidates_list = list(other_candidates)
-                random.shuffle(candidates_list)
-
-                chunk_size = len(candidates_list) // 3
-                for i in range(3):
-                    start_idx = i * chunk_size
-                    end_idx = len(candidates_list) if i == 2 else (
-                        i + 1) * chunk_size
-                    chunk = set(candidates_list[start_idx:end_idx])
-
-                    if chunk:
-                        self.children.add(LeafNode(
-                            sparse_entity=self.sparse_entity,
-                            position=self.position,
-                            relation=self.relation,
-                            candidate_entities=chunk,
-                            data_loader=self.data_loader,
-                            triplet_discriminator=self.triplet_discriminator,
-                            leaf_threshold=self.leaf_threshold,
-                            parent=self,
-                            node_type=f"other_chunk_{i}"
-                        ))
-            else:
-                self.children.add(LeafNode(
-                    sparse_entity=self.sparse_entity,
-                    position=self.position,
-                    relation=self.relation,
-                    candidate_entities=other_candidates,
-                    data_loader=self.data_loader,
-                    triplet_discriminator=self.triplet_discriminator,
-                    leaf_threshold=self.leaf_threshold,
-                    parent=self,
-                    node_type="other"
-                ))
-
-
-class RelationFilterNode(SearchNode):
-    """åŸºäºŽå…³ç³»ç±»åž‹çš„è¿‡æ»¤èŠ‚ç‚¹"""
-
-    def find_children(self) -> Set[SearchNode]:
-        if self.children is None:
+        if sparse_entity_id is None or relation_id is None:
+            self.logger.warning("Sparse entity or relation not found in data loader.")
             return set()
-        return self.children
 
-    def find_random_child(self) -> Optional[SearchNode]:
-        if self.children:
-            return random.choice(list(self.children))
-        return None
+        # 候选实体转ID列表
+        candidate_ids = [
+            self.data_loader.entity2id[ent]
+            for ent in self.unfiltered_entities
+            if ent in self.data_loader.entity2id
+        ]
 
-    def expand(self):
-        """æ ¹æ�®å€™é€‰å®žä½“åœ¨å…¶ä»–å…³ç³»ä¸­çš„å‡ºçŽ°é¢‘çŽ‡åˆ’åˆ†"""
-        if self.children is not None:
-            return
-
-        self.children = set()
-
-        # èŽ·å�–ä¸Žå½“å‰�å…³ç³»ç›¸å…³çš„å®žä½“ï¼ˆåœ¨å…¶ä»–ä¸‰å…ƒç»„ä¸­å‡ºçŽ°è¿‡è¯¥å…³ç³»çš„å®žä½“ï¼‰
-        relation_entities = self.data_loader.get_entities_with_relation(
-            self.relation, self.position
-        )
-
-        # åˆ’åˆ†å€™é€‰å®žä½“
-        related_candidates = self.candidate_entities & relation_entities
-        unrelated_candidates = self.candidate_entities - relation_entities
-
-        if related_candidates:
-            self.children.add(LeafNode(
-                sparse_entity=self.sparse_entity,
-                position=self.position,
-                relation=self.relation,
-                candidate_entities=related_candidates,
-                data_loader=self.data_loader,
-                triplet_discriminator=self.triplet_discriminator,
-                leaf_threshold=self.leaf_threshold,
-                parent=self,
-                node_type="relation_related"
-            ))
-
-        if unrelated_candidates:
-            # å¦‚æžœæ— å…³å®žä½“è¿‡å¤šï¼Œéš�æœºåˆ’åˆ†
-            if len(unrelated_candidates) > self.leaf_threshold * 2:
-                candidates_list = list(unrelated_candidates)
-                random.shuffle(candidates_list)
-
-                mid_point = len(candidates_list) // 2
-                chunk1 = set(candidates_list[:mid_point])
-                chunk2 = set(candidates_list[mid_point:])
-
-                for i, chunk in enumerate([chunk1, chunk2]):
-                    if chunk:
-                        self.children.add(LeafNode(
-                            sparse_entity=self.sparse_entity,
-                            position=self.position,
-                            relation=self.relation,
-                            candidate_entities=chunk,
-                            data_loader=self.data_loader,
-                            triplet_discriminator=self.triplet_discriminator,
-                            leaf_threshold=self.leaf_threshold,
-                            parent=self,
-                            node_type=f"relation_unrelated_{i}"
-                        ))
-            else:
-                self.children.add(LeafNode(
-                    sparse_entity=self.sparse_entity,
-                    position=self.position,
-                    relation=self.relation,
-                    candidate_entities=unrelated_candidates,
-                    data_loader=self.data_loader,
-                    triplet_discriminator=self.triplet_discriminator,
-                    leaf_threshold=self.leaf_threshold,
-                    parent=self,
-                    node_type="relation_unrelated"
-                ))
-
-
-class SemanticFilterNode(SearchNode):
-    """åŸºäºŽLLMè¯­ä¹‰ç�†è§£çš„è¿‡æ»¤èŠ‚ç‚¹"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.llm_client = RemoteLLM()
-
-    def find_children(self) -> Set[SearchNode]:
-        if self.children is None:
+        if not candidate_ids:
+            self.logger.warning("No valid candidate entities to filter with KGE.")
             return set()
-        return self.children
 
-    def find_random_child(self) -> Optional[SearchNode]:
-        if self.children:
-            return random.choice(list(self.children))
-        return None
-
-    def expand(self):
-        """ä½¿ç”¨LLMè¿›è¡Œè¯­ä¹‰è¿‡æ»¤"""
-        if self.children is not None:
-            return
-
-        self.children = set()
-
-        # å¦‚æžœå€™é€‰å®žä½“è¾ƒå°‘ï¼Œç›´æŽ¥ä½œä¸ºå�¶å­�èŠ‚ç‚¹
-        if len(self.candidate_entities) <= self.leaf_threshold * 2:
-            self.children.add(LeafNode(
-                sparse_entity=self.sparse_entity,
-                position=self.position,
-                relation=self.relation,
-                candidate_entities=self.candidate_entities,
-                data_loader=self.data_loader,
-                triplet_discriminator=self.triplet_discriminator,
-                leaf_threshold=self.leaf_threshold,
-                parent=self,
-                node_type="semantic_all"
-            ))
-            return
-
-        # ä½¿ç”¨LLMè¿›è¡Œè¯­ä¹‰åˆ†æž�å’Œåˆ†ç»„
-        try:
-            semantic_groups = self._semantic_grouping()
-
-            for i, group in enumerate(semantic_groups):
-                if group:
-                    self.children.add(LeafNode(
-                        sparse_entity=self.sparse_entity,
-                        position=self.position,
-                        relation=self.relation,
-                        candidate_entities=group,
-                        data_loader=self.data_loader,
-                        triplet_discriminator=self.triplet_discriminator,
-                        leaf_threshold=self.leaf_threshold,
-                        parent=self,
-                        node_type=f"semantic_group_{i}"
-                    ))
-
-        except Exception as e:
-            self.logger.warning(
-                f"LLM semantic grouping failed: {e}, using random split")
-            # å¦‚æžœLLMè°ƒç”¨å¤±è´¥ï¼Œå›žé€€åˆ°éš�æœºåˆ’åˆ†
-            self._random_split()
-
-    def _semantic_grouping(self) -> List[Set[str]]:
-        """ä½¿ç”¨LLMè¿›è¡Œè¯­ä¹‰åˆ†ç»„"""
-        # èŽ·å�–å®žä½“æ��è¿°ä¿¡æ�¯
-        sparse_name = self.data_loader.get_entity_name(self.sparse_entity)
-        sparse_desc = self.data_loader.get_entity_description(
-            self.sparse_entity)
-
-        # éš�æœºé‡‡æ ·ä¸€äº›å€™é€‰å®žä½“è¿›è¡Œåˆ†æž�ï¼ˆé�¿å…�è¾“å…¥è¿‡é•¿ï¼‰
-        sample_size = min(20, len(self.candidate_entities))
-        sample_entities = random.sample(
-            list(self.candidate_entities), sample_size)
-
-        # æž„é€ LLMè¾“å…¥
-        prompt = self._build_semantic_prompt(
-            sparse_name, sparse_desc, sample_entities)
-
-        # è°ƒç”¨LLM
-        response = self.llm_client.get_output(prompt)
-
-        # è§£æž�å“�åº”å¹¶åˆ†ç»„
-        groups = self._parse_semantic_response(response, sample_entities)
-
-        # ä¸ºæœªé‡‡æ ·çš„å®žä½“éš�æœºåˆ†é…�ç»„
-        remaining_entities = self.candidate_entities - set(sample_entities)
-        if remaining_entities and groups:
-            # å°†å‰©ä½™å®žä½“éš�æœºåˆ†é…�åˆ°çŽ°æœ‰ç»„ä¸­
-            remaining_list = list(remaining_entities)
-            random.shuffle(remaining_list)
-
-            group_count = len(groups)
-            for i, entity in enumerate(remaining_list):
-                groups[i % group_count].add(entity)
-
-        return groups
-
-    def _build_semantic_prompt(self, sparse_name: str, sparse_desc: str, sample_entities: List[str]) -> str:
-        """æž„é€ è¯­ä¹‰åˆ†æž�çš„LLMæ��ç¤º"""
-        entity_info = []
-        for entity in sample_entities:
-            name = self.data_loader.get_entity_name(entity)
-            desc = self.data_loader.get_entity_description(entity)
-            entity_info.append(f"- {entity}: {name} ({desc[:100]}...)" if len(
-                desc) > 100 else f"- {entity}: {name} ({desc})")
-
-        prompt = SEMANTIC_ANALYSIS.format(
-            sparse_entity=self.sparse_entity,
-            sparse_name=sparse_name,
-            sparse_desc=sparse_desc,
-            relation=self.relation,
-            position=self.position,
-            candidate_entities=chr(10).join(entity_info)
-        )
-        return prompt
-
-    def _parse_semantic_response(self, response: str, sample_entities: List[str]) -> List[Set[str]]:
-        """è§£æž�LLMçš„è¯­ä¹‰åˆ†ç»„å“�åº”"""
-        groups = []
+        # 设置保留比例（如保留前30%）
+        top_p = 0.3
 
         try:
-            lines = response.strip().split('\n')
-            for line in lines:
-                if line.startswith('Group'):
-                    # æ��å�–ç»„ä¸­çš„å®žä½“
-                    if ':' in line:
-                        entities_str = line.split(':', 1)[1].strip()
-                        entities = [e.strip() for e in entities_str.split(',')]
-                        # å�ªä¿�ç•™æœ‰æ•ˆçš„å®žä½“ID
-                        valid_entities = set(
-                            e for e in entities if e in sample_entities)
-                        if valid_entities:
-                            groups.append(valid_entities)
-
+            if self.position == 'head':
+                # 固定 tail 和 relation，筛选 head
+                top_ids = self.kge_model.get_top_p_heads(
+                    tail_id=sparse_entity_id,
+                    rel_id=relation_id,
+                    candidate_heads=candidate_ids,
+                    p=top_p
+                )
+            elif self.position == 'tail':
+                # 固定 head 和 relation，筛选 tail
+                top_ids = self.kge_model.get_top_p_tails(
+                    head_id=sparse_entity_id,
+                    rel_id=relation_id,
+                    candidate_tails=candidate_ids,
+                    p=top_p
+                )
+            else:
+                raise ValueError(f"Invalid position: {self.position}")
         except Exception as e:
-            self.logger.warning(f"Failed to parse semantic response: {e}")
+            self.logger.error(f"Error during KGE filtering: {e}")
+            return set()
 
-        # å¦‚æžœè§£æž�å¤±è´¥æˆ–æ²¡æœ‰æœ‰æ•ˆåˆ†ç»„ï¼Œéš�æœºåˆ†ç»„
-        if not groups:
-            groups = self._random_grouping(sample_entities)
+        # 将ID映射回实体名称
+        id2entity = self.data_loader.id2entity
+        filtered_entities = {id2entity[idx] for idx in top_ids if idx in id2entity}
 
-        return groups
-
-    def _random_grouping(self, entities: List[str]) -> List[Set[str]]:
-        """éš�æœºåˆ†ç»„"""
-        random.shuffle(entities)
-        group_size = len(entities) // 2
-
-        group1 = set(entities[:group_size])
-        group2 = set(entities[group_size:])
-
-        return [group1, group2]
-
-    def _random_split(self):
-        """éš�æœºåˆ’åˆ†å€™é€‰å®žä½“"""
-        candidates_list = list(self.candidate_entities)
-        random.shuffle(candidates_list)
-
-        mid_point = len(candidates_list) // 2
-        chunk1 = set(candidates_list[:mid_point])
-        chunk2 = set(candidates_list[mid_point:])
-
-        for i, chunk in enumerate([chunk1, chunk2]):
-            if chunk:
-                self.children.add(LeafNode(
-                    sparse_entity=self.sparse_entity,
-                    position=self.position,
-                    relation=self.relation,
-                    candidate_entities=chunk,
-                    data_loader=self.data_loader,
-                    triplet_discriminator=self.triplet_discriminator,
-                    leaf_threshold=self.leaf_threshold,
-                    parent=self,
-                    node_type=f"random_split_{i}"
-                ))
+        self.logger.debug(f"KGENode filtered {len(filtered_entities)} entities from {len(candidate_ids)} candidates.")
+        return filtered_entities
 
 
-class LeafNode(SearchNode):
-    """å�¶å­�èŠ‚ç‚¹ï¼šå€™é€‰å®žä½“æ•°é‡�è¾ƒå°‘ï¼Œå�¯ä»¥ç›´æŽ¥è¿›è¡Œåˆ†ç±»å™¨è¯„ä¼°"""
+class GraphNode(SearchNode):
+    """基于图结构的过滤策略节点"""
 
-    def __init__(self, *args, node_type: str = "leaf", **kwargs):
-        super().__init__(*args, **kwargs)
-        self.node_type = node_type
+    def __init__(self,
+                 sparse_entity: str,
+                 position: str,
+                 relation: str,
+                 unfiltered_entities: Set[str],
+                 data_loader: KGDataLoader,
+                 triplet_discriminator: TriplesDiscriminator,
+                 kge_model: KGEModel,
+                 leaf_threshold: int,
+                 parent: Optional['SearchNode'] = None):
+        super().__init__(sparse_entity, position, relation, unfiltered_entities,
+                        data_loader, triplet_discriminator, kge_model, leaf_threshold, parent)
+        self.candidate_entities = self.filter()
 
-    def find_children(self) -> Set[SearchNode]:
-        return set()  # å�¶å­�èŠ‚ç‚¹æ²¡æœ‰å­�èŠ‚ç‚¹
+    def _extract_keywords_from_description(self, entity_id: str, top_k: int = 5) -> List[str]:
+        """从实体描述中提取关键词"""
+        description = self.data_loader.get_entity_description(entity_id)
+        if not description:
+            return []
 
-    def find_random_child(self) -> Optional[SearchNode]:
-        return None  # å�¶å­�èŠ‚ç‚¹æ²¡æœ‰å­�èŠ‚ç‚¹
+        # 简单的关键词提取（可根据需要替换为更复杂的算法）
+        import re
+        from collections import Counter
 
-    def expand(self):
-        """å�¶å­�èŠ‚ç‚¹ä¸�éœ€è¦�æ‰©å±•"""
-        self.children = set()
+        # 去除标点，转小写，分词
+        words = re.findall(r'\b\w+\b', description.lower())
+        # 常见停用词
+        stop_words = {'the', 'is', 'in', 'a', 'an', 'and', 'or', 'of', 'to', 'for', 'with', 'on', 'at', 'by', 'this', 'that', 'these', 'those'}
+        words = [w for w in words if len(w) > 2 and w not in stop_words]
 
-    def is_terminal(self) -> bool:
-        """å�¶å­�èŠ‚ç‚¹å§‹ç»ˆæ˜¯ç»ˆç«¯èŠ‚ç‚¹"""
-        return True
+        # 统计词频并返回高频词
+        word_freq = Counter(words)
+        return [word for word, _ in word_freq.most_common(top_k)]
+
+    def _calculate_structural_similarity(self, candidate_entity: str) -> float:
+        """计算结构相似性评分（基于Jaccard系数）"""
+        # 获取稀疏实体的邻居结构
+        if self.position == 'head':
+            sparse_neighbors = set()
+            # 获取稀疏实体的一跳邻居
+            sparse_one_hop = self.data_loader.get_one_hop_neighbors(self.sparse_entity)
+            sparse_neighbors.update(sparse_one_hop)
+
+            # 获取稀疏实体的二跳邻居
+            sparse_two_hop = self.data_loader.get_two_hop_neighbors(self.sparse_entity)
+            sparse_neighbors.update(sparse_two_hop)
+        else:  # position == 'tail'
+            sparse_neighbors = set()
+            # 获取稀疏实体的一跳邻居
+            sparse_one_hop = self.data_loader.get_one_hop_neighbors(self.sparse_entity)
+            sparse_neighbors.update(sparse_one_hop)
+
+            # 获取稀疏实体的二跳邻居
+            sparse_two_hop = self.data_loader.get_two_hop_neighbors(self.sparse_entity)
+            sparse_neighbors.update(sparse_two_hop)
+
+        # 获取候选实体的邻居结构
+        candidate_neighbors = set()
+        candidate_one_hop = self.data_loader.get_one_hop_neighbors(candidate_entity)
+        candidate_neighbors.update(candidate_one_hop)
+
+        # 计算Jaccard相似度
+        intersection = sparse_neighbors & candidate_neighbors
+        union = sparse_neighbors | candidate_neighbors
+
+        return len(intersection) / len(union) if union else 0.0
+
+    def _calculate_semantic_similarity(self, candidate_entity: str) -> float:
+        """计算语义相似性评分（基于描述文本的关键词重叠）"""
+        # 提取稀疏实体的关键词
+        sparse_keywords = self._extract_keywords_from_description(self.sparse_entity)
+        if not sparse_keywords:
+            return 0.0
+
+        # 提取候选实体的关键词
+        candidate_keywords = self._extract_keywords_from_description(candidate_entity)
+        if not candidate_keywords:
+            return 0.0
+
+        # 计算关键词重叠度
+        sparse_set = set(sparse_keywords)
+        candidate_set = set(candidate_keywords)
+
+        intersection = sparse_set & candidate_set
+        union = sparse_set | candidate_set
+
+        return len(intersection) / len(union) if union else 0.0
+
+    def _calculate_relation_popularity(self, candidate_entity: str) -> int:
+        """计算关系热度评分"""
+        # 统计候选实体在指定关系下的出现频次
+        if self.position == 'head':
+            # 作为头实体的频次
+            count = 0
+            for rel, tail in self.data_loader.outgoing_edges.get(candidate_entity, []):
+                if rel == self.relation:
+                    count += 1
+            return count
+        else:  # position == 'tail'
+            # 作为尾实体的频次
+            count = 0
+            for rel, head in self.data_loader.incoming_edges.get(candidate_entity, []):
+                if rel == self.relation:
+                    count += 1
+            return count
+
+    def filter(self, p: float = 0.5) -> Set[str]:
+        """基于图结构的启发式方法进行过滤"""
+
+        if not self.unfiltered_entities:
+            return set()
+
+        # 计算各种评分
+        structural_scores = {}
+        semantic_scores = {}
+        popularity_scores = {}
+
+        for entity in self.unfiltered_entities:
+            structural_scores[entity] = self._calculate_structural_similarity(entity)
+            semantic_scores[entity] = self._calculate_semantic_similarity(entity)
+            popularity_scores[entity] = self._calculate_relation_popularity(entity)
+
+        # 归一化评分（可选，但有助于权重平衡）
+        def normalize_scores(scores_dict):
+            if not scores_dict:
+                return scores_dict
+            max_score = max(scores_dict.values())
+            if max_score == 0:
+                return scores_dict
+            return {k: v / max_score for k, v in scores_dict.items()}
+
+        structural_scores = normalize_scores(structural_scores)
+        semantic_scores = normalize_scores(semantic_scores)
+        popularity_scores = normalize_scores(popularity_scores)
+
+        # 计算综合评分（可调整权重）
+        alpha, beta, gamma = 0.4, 0.3, 0.3  # 结构、语义、热度权重
+        combined_scores = {}
+
+        for entity in self.unfiltered_entities:
+            combined_scores[entity] = (
+                alpha * structural_scores.get(entity, 0) +
+                beta * semantic_scores.get(entity, 0) +
+                gamma * popularity_scores.get(entity, 0)
+            )
+
+        # 排序并选择前p比例的实体
+        sorted_entities = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+        keep_count = max(1, int(len(sorted_entities) * p))
+
+        # 返回候选实体集合
+        candidate_entities = {entity for entity, _ in sorted_entities[:keep_count]}
+        return candidate_entities
+
+
+class LLMNode(SearchNode):
+    """基于大语言模型的过滤策略节点"""
+
+    def __init__(self, context: Context):
+        super().__init__(context)
+        self.candidate_entities = self._filter()
+
+    def _filter(self, top_p: float = 0.2) -> Set[str]:
+        """基于LLM的语义分析进行过滤"""
+
+        # 检查缓存中是否已有 feature embeddings
+        if self.sparse_entity in self.llm_cache:
+            feature_embeddings = self.llm_cache[self.sparse_entity]
+        else:
+            # 构造 prompt（仅用于生成 features）
+            prompt = GET_CANDIDATES.format(
+                entity_name=self.data_loader.entity2name[self.sparse_entity].replace(
+                    '_', ' '),
+                entity_description=self.data_loader.entity2description[self.sparse_entity],
+                position=self.position,
+                relation=self.relation
+            )
+
+            # 调用 LLM 获取 features
+            features_text = self.remote_llm.get_output(prompt).strip()
+            features = [f.replace('_', ' ') for f in features_text.split()]
+            if not features:
+                return set()
+
+            # 获取特征词的嵌入并缓存
+            feature_embeddings = self.embedding_model.get_batch_embeddings(
+                features)
+            # 用 sparse_entity 作键缓存
+            self.llm_cache[self.sparse_entity] = feature_embeddings
+
+        # 获取候选实体名称的嵌入
+        entity2embedding = self.data_loader.entity2embedding
+        unfiltered_entities_list = list(self.unfiltered_entities)
+        entity_embeddings = np.array([
+            entity2embedding[ent] for ent in unfiltered_entities_list
+        ])
+
+        # 计算相似度
+        similarity_matrix = np.dot(entity_embeddings, feature_embeddings.T)
+        scores = np.sum(similarity_matrix, axis=1)
+
+        # 选择 top_p 的实体
+        num_top = max(1, int(len(unfiltered_entities_list) * top_p))
+        top_indices = np.argpartition(scores, -num_top)[-num_top:]
+        top_entities = [unfiltered_entities_list[i] for i in top_indices]
+
+        candidate_entities = set(top_entities)
+        rank_logger(self.logger, self.rank)(
+            f"GraphNode filtered {len(candidate_entities)} entities from {len(self.unfiltered_entities)} candidates.")
+        return candidate_entities

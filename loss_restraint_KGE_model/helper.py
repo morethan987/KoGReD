@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from torch.nn import Parameter
 from torch_scatter import scatter_add
 
+
 np.set_printoptions(precision=4)
 
 def set_gpu(gpus):
@@ -21,10 +22,10 @@ def set_gpu(gpus):
 	Parameters
 	----------
 	gpus:           List of GPUs to be used for the run
-	
+
 	Returns
 	-------
-		
+
 	"""
 	os.environ["CUDA_DEVICE_ORDER"]    = "PCI_BUS_ID"
 	os.environ["CUDA_VISIBLE_DEVICES"] = gpus
@@ -38,11 +39,11 @@ def get_logger(name, log_dir, config_dir):
 	name:           Name of the logger file
 	log_dir:        Directory where logger file needs to be stored
 	config_dir:     Directory from where log_config.json needs to be read
-	
+
 	Returns
 	-------
 	A logger object which writes to both file and stdout
-		
+
 	"""
 	config_dict = json.load(open( config_dir + 'log_config.json'))
 	config_dict['handlers']['file_handler']['filename'] = log_dir + name.replace('/', '-')
@@ -74,7 +75,7 @@ def get_combined_results(left_results, right_results):
 	return results
 
 def get_param(shape):
-	param = Parameter(torch.Tensor(*shape)); 	
+	param = Parameter(torch.Tensor(*shape));
 	xavier_normal_(param.data)
 	return param
 

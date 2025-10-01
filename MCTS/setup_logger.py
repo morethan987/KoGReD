@@ -54,6 +54,13 @@ def setup_logger(name: str,
     return logger
 
 
+def rank_logger(logger, rank):
+    if rank==0:
+        return logger.info
+    else:
+        return logger.debug
+
+
 def set_global_log_level(level: str):
     """
     设置全局日志级别
