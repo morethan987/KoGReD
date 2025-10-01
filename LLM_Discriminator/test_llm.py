@@ -31,34 +31,14 @@ def load_test_dataset(path):
         test_dataset = json.load(f)
     return test_dataset
 
-# def load_test_dataset(path):
-#     test_dataset = json.load(open(path, "r"))
-#     true_count = 0
-#     false_count = 0
-#     mini_test_dataset = []
-#     for data in test_dataset:
-#         if data["output"] == "True" and true_count < 200:
-#             true_count += 1
-#             mini_test_dataset.append(data)
-#         elif data["output"] == "False" and false_count < 200:
-#             false_count += 1
-#             mini_test_dataset.append(data)
-#         else:
-#             continue
-#     print(f"Final test num: {len(mini_test_dataset)}")
-
-#     return mini_test_dataset
-
 
 if __name__ == "__main__":
-    # <<< MODIFIED: 初始化分布式进程组
     # PyTorch 分布式训练需要'hccl'作为后端与华为NPU通信
     dist.init_process_group(backend='hccl')
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1)) # 获取总进程数
     device = f"npu:{local_rank}"
     torch.npu.set_device(device) # 绑定当前进程到指定NPU卡
-    # >>> MODIFIED
 
     lora_weights = "/home/ma-user/work/moran/KoPA/output/alpaca_7b_fb_20250924_181238"
     test_data_path = "data/FB15K-237N-test.json"
@@ -82,14 +62,11 @@ if __name__ == "__main__":
     model = model.eval()
     result = []
 
-    # <<< MODIFIED: 调整进度条，使其只在主进程(rank 0)显示，并正确计算其长度
     # 每个进程处理的数据量大约是总数除以world_size
     progress = tqdm(total=len(test_dataset) // world_size, disable=(local_rank != 0))
-    # >>> MODIFIED
 
-    # <<< MODIFIED: 数据并行切分，每个rank只处理自己的一部分数据
+    # 数据并行切分，每个rank只处理自己的一部分数据
     for data in test_dataset[local_rank::world_size]:
-    # >>> MODIFIED
         ent = data["input"]
         ans = data["output"]
         ids = data["embedding_ids"]
@@ -111,10 +88,8 @@ if __name__ == "__main__":
             generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         response = response.replace(context, "").strip()
 
-        # <<< MODIFIED: 只在主进程打印，避免日志混乱
         if local_rank == 0:
             print(response + '\n')
-        # >>> MODIFIED
 
         result.append(
             {
