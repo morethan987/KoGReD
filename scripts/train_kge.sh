@@ -13,15 +13,12 @@ TIME_STAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="$LOG_DIR/train_kge_RotatE_${TIME_STAMP}.log"
 
 # --- 超参数配置 ---
-# [来源: 您的论文图片]
 MODEL_NAME="RotatE"
 DIMENSION=512         # embedding dimension d_e = d_r = 512
 NEGATIVE_SAMPLES=32   # sample K = 32 negative samples
 
-# [来源: 您的论文图片, 从调优集合中选择一个典型值开始]
 MARGIN=6.0            # margin γ is tuned among {0, 4, 6, 8, 12}. 6.0是一个很好的起始值.
 
-# [来源: OpenKE官方示例, 作为合理的基线设置]
 BATCH_SIZE=2048       # KGE训练通常使用较大的batch size以提升效率和稳定性
 LEARNING_RATE=2e-5    # 一个在KGE任务中常见且有效的学习率
 OPTIMIZER="Adam"      # Adam是KGE训练中最常用的优化器

@@ -1,6 +1,5 @@
 import os
 import httpx
-from openai import OpenAI
 import time
 import math
 from typing import List, Tuple, Optional
@@ -16,118 +15,7 @@ import torch_npu
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# åŠ è½½ .env æ–‡ä»¶
 load_dotenv()
-
-
-class RemoteLLM:
-    """LLMæ¨¡åž‹è°ƒç”¨å®¢æˆ·ç«¯"""
-
-    def __init__(self,
-                 api_key: Optional[str] = None,
-                 base_url: Optional[str] = None,
-                 model_name: Optional[str] = None):
-        """
-        åˆ�å§‹åŒ–LLMå®¢æˆ·ç«¯
-
-        Args:
-            api_key: APIå¯†é’¥
-            base_url: APIåŸºç¡€URL
-            model_name: æ¨¡åž‹å��ç§°
-        """
-        self.logger = setup_logger(self.__class__.__name__)
-
-        # ä»ŽçŽ¯å¢ƒå�˜é‡�æˆ–å�‚æ•°èŽ·å�–é…�ç½®
-        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
-        self.base_url = base_url or os.getenv("DEEPSEEK_BASE_URL")
-        self.model_name = model_name or os.getenv(
-            "DEEPSEEK_MODEL_NAME", "deepseek-chat")
-
-        # åˆ�å§‹åŒ–OpenAIå®¢æˆ·ç«¯
-        try:
-            self.client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url,
-                http_client=httpx.Client(trust_env=False)
-            )
-            self.logger.info(
-                f"LLM client initialized with model: {self.model_name}")
-        except Exception as e:
-            self.logger.error(f"Failed to initialize LLM client: {e}")
-            raise
-
-        # è°ƒç”¨ç»Ÿè®¡
-        self.call_count = 0
-        self.total_tokens = 0
-
-    def get_output(self, prompt: str,
-                   temperature: float = 0.0,
-                   max_tokens: Optional[int] = None,
-                   max_retries: int = 3,
-                   retry_delay: float = 2.0) -> str:
-        """
-        èŽ·å�–LLMè¾“å‡º
-
-        Args:
-            prompt: è¾“å…¥æ��ç¤º
-            temperature: ç”Ÿæˆ�æ¸©åº¦
-            max_tokens: æœ€å¤§tokenæ•°
-            max_retries: æœ€å¤§é‡�è¯•æ¬¡æ•°
-            retry_delay: é‡�è¯•å»¶è¿Ÿï¼ˆç§’ï¼‰
-
-        Returns:
-            LLMç”Ÿæˆ�çš„æ–‡æœ¬
-        """
-        attempt = 0
-        while attempt < max_retries:
-            try:
-                # å‡†å¤‡è¯·æ±‚
-                messages = [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
-
-                # å‡†å¤‡å�‚æ•°
-                kwargs = {
-                    "messages": messages,
-                    "model": self.model_name,
-                    "temperature": temperature
-                }
-
-                if max_tokens:
-                    kwargs["max_tokens"] = max_tokens
-
-                # è°ƒç”¨API
-                self.logger.debug(
-                    f"Calling LLM with prompt length: {len(prompt)}")
-                response = self.client.chat.completions.create(**kwargs)
-
-                # æ��å�–å“�åº”
-                content = response.choices[0].message.content
-
-                # æ›´æ–°ç»Ÿè®¡ä¿¡æ�¯
-                self.call_count += 1
-                if hasattr(response, 'usage') and response.usage:
-                    self.total_tokens += response.usage.total_tokens
-
-                self.logger.debug(
-                    f"LLM call successful, response length: {len(content)}")
-                return content
-
-            except Exception as e:
-                attempt += 1
-                self.logger.warning(f"LLM call attempt {attempt} failed: {e}")
-
-                if attempt < max_retries:
-                    self.logger.info(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                else:
-                    self.logger.error("Max retries reached for LLM call")
-                    raise
-
-        return ""
 
 
 class LocalLLM:
@@ -512,3 +400,7 @@ class OpenKEClient:
 
         result_node_ids = [candidate_tails[idx] for idx in topk_indices.tolist()]
         return result_node_ids
+
+
+if __name__=="__main__":
+    pass
