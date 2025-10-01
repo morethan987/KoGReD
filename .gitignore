@@ -2,3 +2,6 @@ __pycache__/
 *.pth
 *.json
 TODO.md
+.bash_aliases.back
+output/
+*.log

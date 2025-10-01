@@ -17,6 +17,7 @@ def get_device():
 # def embed_entity(dataset, embedding_dir, device=None, batch_size=32, output_dir=None):
 def embed_entity(args):
     batch_size = args.batch_size
+    device = args.device
     if args.device is None:
         device = get_device()
 
@@ -72,16 +73,16 @@ def embed_entity(args):
         entity_id: embeddings[i] for i, entity_id in enumerate(entity_ids)
     }
 
-    os.makedirs(output_dir, exist_ok=True)
-    torch.save(embedding_dict, f"{output_dir}/entity2embedding.pth")
-    print(f"嵌入向量已保存至 {output_dir}/entity2embedding.pth")
+    os.makedirs(args.output_dir, exist_ok=True)
+    torch.save(embedding_dict, f"{args.output_dir}/entity2embedding.pth")
+    print(f"嵌入向量已保存至 {args.output_dir}/entity2embedding.pth")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, required=True, help="数据集路径")
     parser.add_argument("--embedding_dir", type=str, required=True, help="SentenceTransformer模型路径")
-    parser.add_argument("--device", type=str, default=None, help="计算设备 (如 'cpu', 'cuda', 'npu')")
+    parser.add_argument("--device", type=str, default=None, help="计算设备 (如 'cpu', 'cuda:0', 'npu:7')")
     parser.add_argument("--batch_size", type=int, default=32, help="批处理大小")
     parser.add_argument("--output_dir", type=str, default=None, help="嵌入向量保存路径 (可选)")
 

@@ -7,6 +7,6 @@ accelerate
 appdirs
 datasets
 fire
-transformers>=4.54.0
+transformers>=4.28.0
 sentencepiece
 peft==0.3.0

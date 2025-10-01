@@ -2,12 +2,13 @@
 # 微调启动脚本
 # 使用方法: cdko && acko && bash scripts/run_embedding.sh
 
+export HF_HUB_OFFLINE=1
+
 # 路径设置
-MODEL_PATH='/home/ma-user/work/model/Qwen3-embedding-8B'
-DATA_PATH='data/FB15K-237N'
-OUTPUT_DIR='data/FB15K-237N'
-KGE_MODEL='data/FB15K-237N-rotate.pth'
-LOG_DIR='logs'
+MODEL_PATH='all-MiniLM-L6-v2'
+DATA_PATH='data/CoDEx-S'
+OUTPUT_DIR=${DATA_PATH}
+LOG_DIR='data/logs'
 TIME_STAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="$LOG_DIR/get_embedding_${TIME_STAMP}.log"
 
@@ -17,11 +18,11 @@ mkdir -p $LOG_DIR
 mkdir -p $OUTPUT_DIR
 
 # 显示NPU信息
-echo "NPU信息:"
+echo "Device status:"
 if command -v npu-smi &> /dev/null; then
     npu-smi info
 else
-    echo "npu-smi 命令不可用"
+    nvidia-smi
 fi
 # 让用户确认是否继续
 read -p "Continue? (Y/n): " CONFIRM
@@ -33,7 +34,7 @@ fi
 nohup python data/run_embedding.py \
     --dataset $DATA_PATH \
     --embedding_dir $MODEL_PATH \
-    --device npu \
+    --device cuda:2 \
     --batch_size 16 \
     --output_dir $OUTPUT_DIR \
     >> $LOG_FILE 2>&1 &
