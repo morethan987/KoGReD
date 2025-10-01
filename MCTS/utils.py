@@ -1,7 +1,7 @@
 import os
 import torch.distributed as dist
 import torch
-import torch_npu
+# import torch_npu
 from datetime import timedelta
 from setup_logger import logging
 

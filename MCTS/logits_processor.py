@@ -1,5 +1,5 @@
 import torch
-import torch_npu
+# import torch_npu
 from transformers.generation.logits_process import LogitsProcessor
 
 

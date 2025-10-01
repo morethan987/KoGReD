@@ -1,5 +1,4 @@
 import os
-import httpx
 import time
 import math
 from typing import List, Tuple, Optional
@@ -9,13 +8,9 @@ from utils import is_distributed, ddp_setup, shard_indices
 from setup_logger import setup_logger
 from logits_processor import BinaryOutputProcessor
 from transformers.generation.logits_process import LogitsProcessorList
-from dotenv import load_dotenv
 import torch
-import torch_npu
+# import torch_npu
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
-
-load_dotenv()
 
 
 class LocalLLM:
@@ -239,7 +234,7 @@ class OpenKEClient:
         """
         # 动态导入 OpenKE 模型类
         try:
-            from openke.models import RotatE
+            from openke.module.model import RotatE
         except ImportError:
             self.logger.error("请确认您已经正确安装了 OpenKE 库 (pip install openke-torch)。")
             raise
@@ -254,7 +249,7 @@ class OpenKEClient:
         # 使用 OpenKE 的默认参数进行实例化。
         if model_name.lower() == 'rotate':
             # RotatE(ent_tot, rel_tot, dim, margin, epsilon)
-            model = model_class(ent_tot=ent_tot, rel_tot=rel_tot, dim=dim, margin=6.0, epsilon=2.0)
+            model = model_class(ent_tot=self.ent_tot, rel_tot=self.rel_tot, dim=self.dim, margin=self.margin, epsilon=2.0)
         else:
             raise ValueError(f"模型 {model_name} 的实例化参数未定义。")
 
@@ -271,10 +266,10 @@ class OpenKEClient:
             state_dict = torch.load(path, map_location='cpu')
 
             # 提取模型参数
-            self.enit_tot = state_dict.get('ent_tot')
-            self.rel_tot = state_dict.get('rel_tot')
-            self.dim = state_dict.get('dim')
             self.margin = state_dict.get('margin', 6.0)
+            self.ent_tot = state_dict.get('ent_embeddings.weight').shape[0]
+            self.rel_tot = state_dict.get('rel_embeddings.weight').shape[0]
+            self.dim = state_dict.get('rel_embeddings.weight').shape[1]
 
             rank_logger(self.logger, self.rank)(f"已从 {path} 加载模型参数字典。")
             return self._instantiate_and_load_model(model_name, state_dict)
