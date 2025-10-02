@@ -9,10 +9,10 @@ from setup_logger import logging
 logger = logging.getLogger(__name__)
 
 
-def get_sparse_entities(dataset, sparse_threshold: float = 9e-4):
+def get_sparse_entities(dataset, sparse_threshold: float = 9e-5):
     """
     返回稀疏实体列表
-    for fb15k-237n, threshold=9e-4
+    for fb15k-237n, threshold=9e-5
     for codex-s, threshold=5e-4
     """
     count = {}
@@ -20,7 +20,7 @@ def get_sparse_entities(dataset, sparse_threshold: float = 9e-4):
         lines = file.readlines()
         triple_num = len(lines)
         for line in lines:
-            head, rel, tail = line.strip().split("\t")  # 修正顺序
+            head, rel, tail = line.strip().split("\t")
             count[head] = count.get(head, 0) + 1
             count[tail] = count.get(tail, 0) + 1
 
@@ -96,7 +96,8 @@ def init_distributed(rank, local_rank, world_size):
             dist.init_process_group(
                 backend=backend,
                 world_size=world_size,
-                rank=rank
+                rank=rank,
+                timeout=timedelta(hours=5)
             )
             dist.barrier()  # 同步所有进程
 

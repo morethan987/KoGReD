@@ -1,34 +1,32 @@
 #!/bin/bash
-# 微调启动脚本
-# 使用方法: cdko && acko && bash scripts/run_finetune_fb15k237n.sh
+# MCTS启动脚本
+# 使用方法: cdko && acko && bash scripts/run_mcts.sh
 
 # 路径设置
+DATA_PATH='data/FB15K-237N'
 MODEL_PATH='/home/ma-user/work/model/Alpaca-7B'
-DATA_PATH='data/FB15K-237N-test.json'
-OUTPUT_DIR='output/alpaka_7b_fb'
+OUTPUT_DIR='MCTS/output/fb15k-237n'
+PROCESSED_DATA="MCTS/output/precessed_data.pth"
+LORA_PATH="LLM_Discriminator/output/alpaca-7b-fb"
+EMBEDDING_PATH="$LORA_PATH/embeddings.pth"
+ENTITY2EMBEDDING_PATH="$DATA_PATH/entity2embedding.pth"
 KGE_MODEL='data/FB15K-237N-rotate.pth'
-LOG_DIR='logs'
+discriminator_folder="$pwd/LLM_Discriminator"
+LOG_DIR='MCTS/logs'
 TIME_STAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="$LOG_DIR/mcts_${TIME_STAMP}.log"
 
-
-# wandb 设置
-export WANDB_DISABLED=true
-wandb offline
-wandb disabled
 
 # 设置 NPU 环境变量
-export ASCEND_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-export NPU_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-export WORLD_SIZE=8
+export CUDA_VISIBLE_DEVICES=0,1,2
 export MASTER_ADDR=127.0.0.1
 export MASTER_PORT=29503
-NPROC=$(( $(echo "$NPU_VISIBLE_DEVICES" | tr -cd ',' | wc -c) + 1 ))
+NPROC=$(( $(echo "$CUDA_VISIBLE_DEVICES" | tr -cd ',' | wc -c) + 1 ))
 
 
 # 创建目录及文件
 mkdir -p $LOG_DIR
 mkdir -p $OUTPUT_DIR
-LOG_FILE="$LOG_DIR/finetune_${TIME_STAMP}.log"
 
 # 设置 tokenizers 并行化环境变量，避免警告
 export TOKENIZERS_PARALLELISM=false
@@ -38,7 +36,7 @@ echo "NPU信息:"
 if command -v npu-smi &> /dev/null; then
     npu-smi info
 else
-    echo "npu-smi 命令不可用"
+    nvidia-smi
 fi
 # 让用户确认是否继续
 read -p "Continue? (Y/n): " CONFIRM
@@ -52,27 +50,30 @@ nohup torchrun \
     --nproc_per_node=$NPROC \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-    finetune_kopa.py \
-    --base_model $MODEL_PATH \
-    --data_path $DATA_PATH \
-    --output_dir $OUTPUT_DIR \
-    --num_epochs 3 \
-    --lora_r 64 \
-    --learning_rate 3e-4 \
-    --batch_size 8 \
-    --micro_batch_size 8 \
-    --num_prefix 1 \
-    --kge_model $KGE_MODEL \
-    --lora_target_modules '["q_proj","k_proj","v_proj","o_proj"]' \
-    --llm_dim 4096 \
+    MCTS/run_mcts.py \
+    --data_folder $DATA_PATH \
+    --processed_data $PROCESSED_DATA \
+    --output_folder $OUTPUT_DIR \
+    --llm_path $MODEL_PATH \
+    --lora_path $LORA_PATH \
+    --embedding_path $EMBEDDING_PATH \
+    --entity2embedding_path $ENTITY2EMBEDDING_PATH \
+    --kge_path $KGE_MODEL \
+    --discriminator_folder $LORA_PATH \
+    --dtype fp16 \
+    --exploration_weight 1.0 \
+    --leaf_threshold 32 \
+    --mcts_iterations 10 \
+    --budget_per_entity 200 \
+    --checkpoint_interval 1 \
     >> $LOG_FILE 2>&1 &
 
 # 获取进程ID
 PID=$!
 {
     echo "========================================================="
-    echo "LoRA微调进程已启动, PID: $PID    日志文件: $LOG_FILE"
+    echo "MCTS进程已启动, PID: $PID    日志文件: $LOG_FILE"
     echo "查看日志: tail -f $LOG_FILE"
-    echo "停止进程: ps aux | grep finetune_kopa.py | grep -v grep | awk '{print \$2}' | xargs kill -9"
+    echo "停止进程: kill $PID"
     echo "========================================================="
 } | tee -a "$LOG_FILE"

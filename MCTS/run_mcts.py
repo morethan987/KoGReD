@@ -14,7 +14,7 @@ class Runner:
         self.args = args
         self.data_folder = args.data_folder
         self.logger = setup_logger(self.__class__.__name__)
-        self.checkpoint_file = os.path.join(args.output_folder, f"checkpoint_rank_{self.rank}.json")
+        self.checkpoint_file = os.path.join(args.output_folder, f"checkpoints/checkpoint_rank_{self.rank}.json")
 
         # 获取分布式信息
         self.rank = int(os.environ.get("RANK", 0))
@@ -31,9 +31,7 @@ class Runner:
             self.rank, self.local_rank, self.world_size
         )
 
-        self.correct_relations = torch.load(
-            f"{self.args.output_folder}/correct_relations.pth"
-        )
+        self.precessed_data = torch.load(args.processed_data)
 
         self.enhancer = KGEnhancer(
             rank=self.rank,
@@ -92,7 +90,7 @@ class Runner:
             rank_logger(self.logger, self.rank)(f"Failed to save checkpoint: {e}")
 
     def run(self):
-        items = list(self.correct_relations.items())
+        items = list(self.precessed_data.items())
         indices = shard_indices(len(items), self.rank, self.world_size)
         local_data = [items[i] for i in indices]
 
@@ -182,35 +180,13 @@ if __name__ == "__main__":
         "--data_folder", type=str, required=True, help="Path to the dataset folder"
     )
     parser.add_argument(
-        "--use_local_llm", action="store_true", help="Use local LLM instead of remote"
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        default="fp32",
-        choices=["fp32", "fp16", "bf16"],
-        help="Data type for the model (default: float32)",
-    )
-    parser.add_argument(
         "--processed_data",
         type=str,
-        default="MCTS/output/correct_relations.pth",
+        required=True,
         help="Path to save/load preprocessed relations",
     )
     parser.add_argument(
         "--output_folder", type=str, default="MCTS/output", help="Output folder"
-    )
-    parser.add_argument(
-        "--exploration_weight", type=float, default=1.0, help="Exploration weight for MCTS"
-    )
-    parser.add_argument(
-        "--leaf_threshold", type=int, default=10, help="Threshold for leaf node"
-    )
-    parser.add_argument(
-        "--mcts_iterations", type=int, default=50, help="Number of MCTS iterations"
-    )
-    parser.add_argument(
-        "--budget_per_entity", type=int, default=1000, help="Budget per sparse entity"
     )
     parser.add_argument(
         "--llm_path", type=str, required=True, help="Path to the LLM model"
@@ -229,6 +205,25 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--discriminator_folder", type=str, required=True, help="Discriminator module name"
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="fp32",
+        choices=["fp32", "fp16", "bf16"],
+        help="Data type for the model (default: float32)",
+    )
+    parser.add_argument(
+        "--exploration_weight", type=float, default=1.0, help="Exploration weight for MCTS"
+    )
+    parser.add_argument(
+        "--leaf_threshold", type=int, default=10, help="Threshold for leaf node"
+    )
+    parser.add_argument(
+        "--mcts_iterations", type=int, default=50, help="Number of MCTS iterations"
+    )
+    parser.add_argument(
+        "--budget_per_entity", type=int, default=1000, help="Budget per sparse entity"
     )
     parser.add_argument(
         "--checkpoint_interval", type=int, default=10, help="Save checkpoint every N entities"

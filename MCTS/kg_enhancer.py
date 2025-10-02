@@ -14,6 +14,7 @@ class KGEnhancer:
     def __init__(self,
                  rank: int = 0,
                  entity2name_path: str,
+                 entity2embedding_path: str,
                  relation2id_path: str,
                  entity2id_path: str,
                  entity2description_path: str,
@@ -55,6 +56,7 @@ class KGEnhancer:
         self.logger.info("Loading knowledge graph data...")
         self.data_loader = KGDataLoader(
             entity2name_path=entity2name_path,
+            entity2embedding_path=entity2embedding_path,
             relation2id_path=relation2id_path,
             entity2id_path=entity2id_path,
             entity2description_path=entity2description_path,

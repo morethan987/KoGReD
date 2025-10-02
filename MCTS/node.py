@@ -434,18 +434,18 @@ class LLMNode(SearchNode):
 
     def _get_target_embedding(self) -> np.ndarray:
         """获取目标实体的嵌入表示"""
-        pass
+        target_entity_set = self.data_loader.get_neighbors_with_relation(
+            self.sparse_entity, self.relation, self.position
+        )
+        # 获取均值向量
+        embeddings = [
+            self.data_loader.entity2embedding[ent]
+            for ent in target_entity_set
+        ]
+        return np.mean(embeddings, axis=0)
 
     def _filter(self, top_p: float = 0.2) -> Set[str]:
         """基于LLM的语义分析进行过滤"""
-        # feature_vec = sparse_entity_vec +/- relation_vec
-        # feature_vec: ndarray, shape (embedding_dim, 1)
-        if self.position == 'head':
-            feature_embeddings = self.data_loader.relation2embedding[self.relation] + \
-                self.data_loader.entity2embedding[self.sparse_entity]
-        else:  # position == 'tail'
-            feature_embeddings = self.data_loader.entity2embedding[self.sparse_entity] - \
-                self.data_loader.relation2embedding[self.relation]
         feature_embeddings = self._get_target_embedding(self.sparse_entity).reshape(-1, 1)
 
         # 获取候选实体名称的嵌入

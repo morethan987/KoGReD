@@ -1,3 +1,4 @@
+import torch
 import logging
 from typing import Dict, List, Set, Tuple
 from collections import defaultdict
@@ -10,6 +11,7 @@ class KGDataLoader:
 
     def __init__(self,
                  entity2name_path: str,
+                 entity2embedding_path: str,
                  relation2id_path: str,
                  entity2id_path: str,
                  entity2description_path: str,
@@ -36,6 +38,10 @@ class KGDataLoader:
         # 加载实体到ID映射
         self.entity2id = self._load_entity2id(entity2id_path)
         self.logger.debug(f"Loaded {len(self.entity2id)} entity ids")
+
+        # 加载实体到嵌入映射
+        self.entity2embedding = torch.load(entity2embedding_path)
+        self.logger.debug(f"Loaded entity embeddings with shape {self.entity2embedding.shape}")
 
         # 加载实体描述
         self.entity2description = self._load_entity2description(
@@ -168,6 +174,31 @@ class KGDataLoader:
         # 入边邻居
         for _, source in self.incoming_edges[entity]:
             neighbors.add(source)
+
+        return neighbors
+
+    def get_neighbors_with_relation(self, entity: str, relation: str, position: str) -> Set[str]:
+        """
+        获取与指定关系相关的一跳邻居
+
+        Args:
+            entity: 实体ID
+            relation: 关系类型
+            position: 'head' 或 'tail'
+
+        Returns:
+            实体集合
+        """
+        neighbors = set()
+
+        if position == 'head':
+            for rel, target in self.outgoing_edges[entity]:
+                if rel == relation:
+                    neighbors.add(target)
+        elif position == 'tail':
+            for rel, source in self.incoming_edges[entity]:
+                if rel == relation:
+                    neighbors.add(source)
 
         return neighbors
 
