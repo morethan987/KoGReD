@@ -23,6 +23,9 @@ def main():
 
     # 编码并生成
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    # 移除模型不需要的 token_type_ids
+    if 'token_type_ids' in inputs:
+        del inputs['token_type_ids']
     outputs = model.generate(**inputs, max_new_tokens=30, do_sample=True, temperature=0.9)
     result = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
