@@ -17,6 +17,7 @@ class KGEnhancer:
                  entity2embedding_path: str,
                  relation2id_path: str,
                  entity2id_path: str,
+                 output_folder: str,
                  entity2description_path: str,
                  kg_path: str,
                  budget_per_entity: int = 1000,
@@ -45,6 +46,9 @@ class KGEnhancer:
             exploration_weight: UCT探索权重
         """
         self.logger = setup_logger(self.__class__.__name__)
+        self.rank = rank
+        self.output_folder = output_folder
+        self.all_entities = set(self.data_loader.entity2name.keys())
 
         # 配置参数
         self.budget_per_entity = budget_per_entity
@@ -104,17 +108,19 @@ class KGEnhancer:
             f"Starting enhancement for {sparse_entity}-{position}-{relation}")
 
         # 获取所有候选目标实体（除了稀疏实体本身）
-        all_entities = set(self.data_loader.entity2name.keys())
-        candidate_entities = all_entities - {sparse_entity}
+        candidate_entities = self.all_entities - {sparse_entity}
 
         self.logger.info(
             f"Total candidate entities: {len(candidate_entities)}")
 
         # 构建上下文信息
         context = Context(
+            rank=self.rank,
             sparse_entity=sparse_entity,
-            relation=relation,
             position=position,
+            relation=relation,
+            unfiltered_entities=candidate_entities,
+            output_folder=self.output_folder,
             data_loader=self.data_loader,
             triplet_discriminator=self.triplet_discriminator,
             kge_model=self.kge_model,

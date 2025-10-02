@@ -38,6 +38,7 @@ class Runner:
             entity2name_path=f"{self.data_folder}/entity2name.txt",
             relation2id_path=f"{self.data_folder}/relation2id.txt",
             entity2id_path=f"{self.data_folder}/entity2id.txt",
+            output_folder=self.args.output_folder,
             entity2embedding_path=self.args.entity2embedding_path,
             entity2description_path=f"{self.data_folder}/entity2des.txt",
             kg_path=f"{self.data_folder}/train.txt",
