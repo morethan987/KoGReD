@@ -1,8 +1,9 @@
 import os
+import argparse
 import json
 import torch
-import torch_npu
-from torch_npu.contrib import transfer_to_npu
+# import torch_npu
+# from torch_npu.contrib import transfer_to_npu
 from tqdm import tqdm
 from peft import PeftModel
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
@@ -10,7 +11,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch.distributed as dist
 
 
-base_path = '/home/ma-user/work/model/Alpaca-7B'
 
 prompt_template = """
 Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
@@ -32,28 +32,32 @@ def load_test_dataset(path):
     return test_dataset
 
 
-if __name__ == "__main__":
-    # PyTorch 分布式训练需要'hccl'作为后端与华为NPU通信
+def main(args):
+    # dist.init_process_group(backend='hccl')
     dist.init_process_group(backend='hccl')
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1)) # 获取总进程数
-    device = f"npu:{local_rank}"
-    torch.npu.set_device(device) # 绑定当前进程到指定NPU卡
+    # device = f"npu:{local_rank}"
+    device = f"cuda:{local_rank}"
+    # torch.npu.set_device(device) # 绑定当前进程到指定NPU卡
+    torch.cuda.set_device(device) # 绑定当前进程到指定NPU卡
 
-    lora_weights = "/home/ma-user/work/moran/KoPA/output/alpaca_7b_fb_20250924_181238"
-    test_data_path = "data/FB15K-237N-test.json"
+    base_path = args.base_model
+    lora_weights = args.lora_weights
+    test_data_path = args.test_data
     embedding_path = "{}/embeddings.pth".format(lora_weights)
     test_dataset = load_test_dataset(test_data_path)
     kg_embeddings = torch.load(embedding_path).to(device)
-    tokenizer = AutoTokenizer.from_pretrained(base_path)
+    tokenizer = AutoTokenizer.from_pretrained(base_path, local_files_only=True)
     model = AutoModelForCausalLM.from_pretrained(
         base_path,
-        torch_dtype=torch.bfloat16
+        torch_dtype=torch.float16,
+        local_files_only=True
     ).to(device)
     model = PeftModel.from_pretrained(
         model,
         lora_weights,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.float16,
     ).to(device)
     # unwind broken decapoda-research config
     model.config.pad_token_id = tokenizer.pad_token_id = 0  # unk
@@ -71,12 +75,11 @@ if __name__ == "__main__":
         ans = data["output"]
         ids = data["embedding_ids"]
         ids = torch.LongTensor(ids).reshape(1, -1).to(device)
-        prefix = kg_embeddings(ids).to(torch.bfloat16)
+        prefix = kg_embeddings(ids).to(torch.float16)
         prompt = prompt_template.format(ent)
         inputs = tokenizer(prompt, return_tensors="pt")
         input_ids = inputs.input_ids.to(device)
-        token_embeds = model.model.model.embed_tokens(
-            input_ids).to(torch.bfloat16)
+        token_embeds = model.model.model.embed_tokens(input_ids).to(torch.float16)
         input_embeds = torch.cat((prefix, token_embeds), dim=1)
         generate_ids = model.generate(
             inputs_embeds=input_embeds,
@@ -133,3 +136,12 @@ if __name__ == "__main__":
             print(f"Accuracy: {acc}, Precision: {p}, Recall: {r}, F1-score: {f1}")
         else:
             print("No results to evaluate.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base_model", type=str, required=True, help="Path to the base model")
+    parser.add_argument("--test_data", type=str, required=True, help="Path to the test dataset")
+    parser.add_argument("--lora_weights", type=str, required=True, help="Path to the LoRA weights")
+    args = parser.parse_args()
+    main(args)
