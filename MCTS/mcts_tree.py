@@ -3,13 +3,13 @@ from collections import defaultdict
 from typing import List, Tuple
 
 from node import SearchNode
-from setup_logger import setup_logger
+from setup_logger import setup_logger, rank_logger
 
 
 class MCTS:
     """Monte Carlo Tree Search实现"""
 
-    def __init__(self, exploration_weight: float = 1.0):
+    def __init__(self, rank: int, exploration_weight: float = 1.0):
         """
         初始化MCTS
 
@@ -19,6 +19,7 @@ class MCTS:
         self.exploration_weight = exploration_weight
         self.logger = setup_logger(self.__class__.__name__)
         self.reset()
+        self.rank = rank
 
     def reset(self):
         """重置MCTS状态"""
@@ -36,48 +37,24 @@ class MCTS:
         Returns:
             (发现的正确三元组列表, 使用的分类器调用次数)
         """
-        self.logger.debug("Starting MCTS iteration")
+        rank_logger(self.logger, self.rank)("Starting MCTS iteration")
 
         # Step 1: Selection - 选择到叶子节点的路径
         path = self._select(root_node)
         leaf = path[-1]
 
-        self.logger.debug(
+        rank_logger(self.logger, self.rank)(
             f"Selected path length: {len(path)}, leaf type: {leaf.__class__.__name__}")
 
         # Step 2: Expansion - 扩展叶子节点（如果不是终端节点）
-        expanded_nodes = self._expand(leaf)
+        self._expand(leaf)
 
         # Step 3: Rollout - 在叶子节点或新扩展的节点上进行评估
-        rollout_results = []
-        total_budget_used = 0
+        rollout_results, total_budget_used = self._rollout(leaf)
 
-        if leaf.is_terminal():
-            # 叶子节点是终端节点，直接评估
-            triplets, budget = self._rollout(leaf)
-            rollout_results.extend(triplets)
-            total_budget_used += budget
-            reward = 1.0 if triplets else 0.0
-
-            # Step 4: Backpropagation - 反向传播奖励
-            self._backpropagate(path, reward)
-
-        else:
-            # 对扩展的子节点进行评估
-            for child in expanded_nodes:
-                triplets, budget = self._rollout(child)
-                rollout_results.extend(triplets)
-                total_budget_used += budget
-
-                # 计算奖励（基于发现的正确三元组数量）
-                reward = len(triplets) / max(budget, 1)  # 避免除零
-
-                # 反向传播到包含子节点的路径
-                child_path = path + [child]
-                self._backpropagate(child_path, reward)
-
-        self.logger.debug(f"Iteration completed: found {len(rollout_results)} triplets, "
-                          f"used {total_budget_used} budget")
+        # Step 4: Backpropagation
+        reward = self._calculate_reward(rollout_results, total_budget_used)
+        self._backpropagate(path, reward)
 
         return rollout_results, total_budget_used
 
@@ -152,7 +129,7 @@ class MCTS:
 
         return exploitation + exploration
 
-    def _expand(self, node: SearchNode) -> List[SearchNode]:
+    def _expand(self, node: SearchNode):
         """
         Expansion阶段：扩展节点的子节点
 
@@ -163,15 +140,11 @@ class MCTS:
             新扩展的子节点列表
         """
         if node in self.explored:
-            return []  # 节点已经被扩展过
+            return
 
         # 扩展节点
         node.expand()
         self.explored.add(node)
-
-        # 返回所有子节点（可能为空）
-        children = node.find_children()
-        return list(children)
 
     def _rollout(self, node: SearchNode) -> Tuple[List[Tuple[str, str, str]], int]:
         """
@@ -189,10 +162,24 @@ class MCTS:
         else:
             # 非终端节点：递归评估一个随机子节点
             random_child = node.find_random_child()
-            if random_child:
-                return self._rollout(random_child)
-            else:
-                return [], 0
+            return self._rollout(random_child)
+
+    def _calculate_reward(self, rollout_results: List[Tuple[str, str, str]], total_budget_used: int) -> float:
+        """
+        根据rollout结果计算奖励值
+
+        Args:
+            rollout_results: rollout阶段发现的正确三元组列表
+
+        Returns:
+            奖励值
+        """
+        reward = len(rollout_results) / (total_budget_used + 1)  # 避免除以零
+
+        rank_logger(self.logger, self.rank)(
+            f"Calculated reward: {reward} from {len(rollout_results)} correct triplets")
+
+        return reward
 
     def _backpropagate(self, path: List[SearchNode], reward: float):
         """
@@ -202,6 +189,9 @@ class MCTS:
             path: 从根到叶子的节点路径
             reward: 奖励值
         """
+        rank_logger(self.logger, self.rank)(
+            f"Backpropagating reward {reward} along path of length {len(path)}")
+
         for node in reversed(path):
             self.N[node] += 1
             self.Q[node] += reward
@@ -228,7 +218,12 @@ class MCTS:
             return None
 
         # 选择平均奖励最高的子节点
-        return max(children, key=self._get_average_reward)
+        best_child = max(children, key=self._get_average_reward)
+
+        rank_logger(self.logger, self.rank)(
+            f"Chose best child with average reward: {self._get_average_reward(best_child)}")
+
+        return best_child
 
     def _get_average_reward(self, node: SearchNode) -> float:
         """
@@ -247,5 +242,6 @@ class MCTS:
         return {
             "total_nodes_explored": len(self.explored),
             "total_visits": sum(self.N.values()),
-            "total_reward": sum(self.Q.values())
+            "total_reward": sum(self.Q.values()),
+            "average_reward_per_visit": sum(self.Q.values()) / max(sum(self.N.values()), 1)
         }

@@ -11,7 +11,7 @@ LORA_PATH="LLM_Discriminator/output/alpaca-7b-fb"
 EMBEDDING_PATH="$LORA_PATH/embeddings.pth"
 ENTITY2EMBEDDING_PATH="$DATA_PATH/entity2embedding.pth"
 KGE_MODEL='data/FB15K-237N-rotate.pth'
-discriminator_folder="$pwd/LLM_Discriminator"
+DISCRIMINATOR_FOLDER="$pwd/LLM_Discriminator"
 LOG_DIR='MCTS/logs'
 TIME_STAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="$LOG_DIR/mcts_${TIME_STAMP}.log"
@@ -59,7 +59,8 @@ nohup torchrun \
     --embedding_path $EMBEDDING_PATH \
     --entity2embedding_path $ENTITY2EMBEDDING_PATH \
     --kge_path $KGE_MODEL \
-    --discriminator_folder $LORA_PATH \
+    --discriminator_folder $DISCRIMINATOR_FOLDER \
+    --roor_dir $PWD \
     --dtype fp16 \
     --exploration_weight 1.0 \
     --leaf_threshold 32 \

@@ -208,6 +208,9 @@ if __name__ == "__main__":
         "--discriminator_folder", type=str, required=True, help="Discriminator module name"
     )
     parser.add_argument(
+        "--root_dir", type=str, default=".", help="Root directory for imports"
+    )
+    parser.add_argument(
         "--dtype",
         type=str,
         default="fp32",
@@ -233,6 +236,7 @@ if __name__ == "__main__":
 
     # 添加上级目录到sys.path以导入自定义模块
     sys.path.append(args.discriminator_folder)
+    sys.path.append(args.root_dir)
 
     # 延迟导入
     from kg_enhancer import KGEnhancer

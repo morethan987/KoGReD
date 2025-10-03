@@ -88,7 +88,10 @@ class KGEnhancer:
         )
 
         # 初始化MCTS
-        self.mcts = MCTS(exploration_weight=exploration_weight)
+        self.mcts = MCTS(
+            rank=self.rank,
+            exploration_weight=exploration_weight
+        )
 
         self.logger.info("KGEnhancer initialized successfully")
 
