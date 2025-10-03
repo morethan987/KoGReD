@@ -1,6 +1,8 @@
 import os
+import sys
 import json
 import torch
+import argparse
 from setup_logger import setup_logger, rank_logger
 from utils import init_distributed, cleanup_distributed, shard_indices, get_device
 import torch.distributed as dist
@@ -14,16 +16,15 @@ class Runner:
         self.args = args
         self.data_folder = args.data_folder
         self.logger = setup_logger(self.__class__.__name__)
-        self.checkpoint_file = os.path.join(args.output_folder, f"checkpoints/checkpoint_rank_{self.rank}.json")
 
         # 获取分布式信息
         self.rank = int(os.environ.get("RANK", 0))
         self.local_rank = int(os.environ.get("LOCAL_RANK", 0))
         self.world_size = int(os.environ.get("WORLD_SIZE", 1))
-        self.device = get_device(self.local_rank)
-        if self.device.string.startswith('npu'):
+        self.device, self.device_type = get_device(self.local_rank)
+        if self.device_type == "npu":
             torch.npu.set_device(self.device)
-        elif self.device.string.startswith('cuda'):
+        elif self.device_type == "cuda":
             torch.cuda.set_device(self.device)
 
         # 初始化分布式环境
@@ -31,7 +32,8 @@ class Runner:
             self.rank, self.local_rank, self.world_size
         )
 
-        self.precessed_data = torch.load(args.processed_data)
+        self.processed_data = torch.load(args.processed_data)
+        self.checkpoint_file = os.path.join(args.output_folder, f"checkpoints/checkpoint_rank_{self.rank}.json")
 
         self.enhancer = KGEnhancer(
             rank=self.rank,
@@ -91,9 +93,10 @@ class Runner:
             rank_logger(self.logger, self.rank)(f"Failed to save checkpoint: {e}")
 
     def run(self):
-        items = list(self.precessed_data.items())
+        items = list(self.processed_data.items())
         indices = shard_indices(len(items), self.rank, self.world_size)
         local_data = [items[i] for i in indices]
+        self.logger.debug(f"Rank {self.rank} processing {len(local_data)} entities.")
 
         progress = tqdm(
             total=len(local_data),

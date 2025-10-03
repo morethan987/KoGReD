@@ -5,6 +5,7 @@
 
 from typing import Set, List
 import random
+import torch
 import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ import re
 from collections import Counter
 
 from kg_data_loader import KGDataLoader
-from discriminator import TriplesDiscriminator
+from LLM_Discriminator.discriminator import TriplesDiscriminator
 from model_calls import OpenKEClient
 from setup_logger import setup_logger, rank_logger
 
@@ -223,7 +224,7 @@ class KGENode(SearchNode):
         super().__init__(context)
         self.candidate_entities = self._filter()
 
-    def _filter(self, top_p: float = 0.2) -> Set[str]:
+    def _filter(self, top_p: float = 0.3) -> Set[str]:
         """基于KGE模型的打分结果进行过滤，保留得分前top_p比例的实体"""
         if not self.unfiltered_entities:
             return set()
@@ -444,9 +445,9 @@ class LLMNode(SearchNode):
         ]
         return np.mean(embeddings, axis=0)
 
-    def _filter(self, top_p: float = 0.2) -> Set[str]:
+    def _filter(self, top_p: float = 0.3) -> Set[str]:
         """基于LLM的语义分析进行过滤"""
-        feature_embeddings = self._get_target_embedding(self.sparse_entity).reshape(-1, 1)
+        feature_embeddings = self._get_target_embedding().reshape(-1, 1)
 
         # 获取候选实体名称的嵌入
         unfiltered_entities_list = list(self.unfiltered_entities)
@@ -455,7 +456,7 @@ class LLMNode(SearchNode):
         ])
 
         # 计算相似度
-        scores = np.dot(entity_embeddings, feature_embeddings.T)
+        scores = np.dot(entity_embeddings, feature_embeddings).flatten()
 
         # 选择 top_p 的实体
         num_top = max(1, int(len(unfiltered_entities_list) * top_p))

@@ -50,12 +50,13 @@ class TriplesDiscriminator:
         print(f"Loading model components to device: {self.device}")
 
         # 1. Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(self.llm_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.llm_path, local_files_only=True)
 
         # 2. Load base model
         model = AutoModelForCausalLM.from_pretrained(
             self.llm_path,
-            torch_dtype=self.torch_dtype
+            torch_dtype=self.torch_dtype,
+            local_files_only=True
         ).to(self.device)
 
         # 3. Apply LoRA weights (PeftModel)

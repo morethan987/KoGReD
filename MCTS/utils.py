@@ -64,30 +64,36 @@ def shard_indices(total_size: int, rank: int, world_size: int):
 
 def get_device(local_rank: int):
     if is_distributed():
-        if torch.npu.is_available():
-            device = torch.device(f'npu:{local_rank}')
-        elif torch.cuda.is_available():
+        if torch.cuda.is_available():
             device = torch.device(f'cuda:{local_rank}')
+            device_type = 'cuda'
+        elif torch.npu.is_available():
+            device = torch.device(f'npu:{local_rank}')
+            device_type = 'npu'
         else:
             device = torch.device('cpu')
+            device_type = 'cpu'
     else:
-        if torch.npu.is_available():
-            device = torch.device('npu:0')
-        elif torch.cuda.is_available():
+        if torch.cuda.is_available():
             device = torch.device('cuda:0')
+            device_type = 'cuda'
+        elif torch.npu.is_available():
+            device = torch.device('npu:0')
+            device_type = 'npu'
         else:
             device = torch.device('cpu')
-    return device
+            device_type = 'cpu'
+    return device, device_type
 
 
 def init_distributed(rank, local_rank, world_size):
     """初始化单机多卡分布式环境"""
     if is_distributed():
         # 根据设备类型选择后端
-        if torch.npu.is_available():
-            backend = 'hccl'  # 华为NPU使用hccl后端
-        elif torch.cuda.is_available():
+        if torch.cuda.is_available():
             backend = 'nccl'  # NVIDIA GPU使用nccl后端
+        elif torch.npu.is_available():
+            backend = 'hccl'  # 华为NPU使用hccl后端
         else:
             backend = 'gloo'  # CPU使用gloo后端
 

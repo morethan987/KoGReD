@@ -5,7 +5,7 @@ from typing import List, Tuple, Optional
 from tqdm.auto import tqdm
 import torch.distributed as dist
 from utils import is_distributed, ddp_setup, shard_indices
-from setup_logger import setup_logger
+from setup_logger import setup_logger, rank_logger
 from logits_processor import BinaryOutputProcessor
 from transformers.generation.logits_process import LogitsProcessorList
 import torch
@@ -286,7 +286,7 @@ class OpenKEClient:
             "batch_h": h,
             "batch_r": r,
             "batch_t": t,
-            "mode": "normal" # 某些模型需要 mode 参数
+            "mode": "normal"
         })
 
     def get_score(self, head_id: int, rel_id: int, tail_id: int) -> float:
@@ -369,9 +369,10 @@ class OpenKEClient:
         heads_tensor = torch.tensor(candidate_heads, dtype=torch.long, device=self.device)
 
         scores = self._predict(heads_tensor, r, t)
+        scores_tensor = torch.tensor(scores, device=self.device)
 
         k = max(1, math.ceil(num_candidates * p))
-        _, topk_indices = torch.topk(scores, k, largest=True)
+        _, topk_indices = torch.topk(scores_tensor, k, largest=True)
 
         result_node_ids = [candidate_heads[idx] for idx in topk_indices.tolist()]
         return result_node_ids
@@ -389,9 +390,10 @@ class OpenKEClient:
         tails_tensor = torch.tensor(candidate_tails, dtype=torch.long, device=self.device)
 
         scores = self._predict(h, r, tails_tensor)
+        scores_tensor = torch.tensor(scores, device=self.device)
 
         k = max(1, math.ceil(num_candidates * p))
-        _, topk_indices = torch.topk(scores, k, largest=True)
+        _, topk_indices = torch.topk(scores_tensor, k, largest=True)
 
         result_node_ids = [candidate_tails[idx] for idx in topk_indices.tolist()]
         return result_node_ids

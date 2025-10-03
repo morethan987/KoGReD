@@ -12,7 +12,7 @@ class KGEnhancer:
     """知识图谱增强器：为稀疏结点搜索新的三元组关系"""
 
     def __init__(self,
-                 rank: int = 0,
+                 rank: int,
                  entity2name_path: str,
                  entity2embedding_path: str,
                  relation2id_path: str,
@@ -48,7 +48,6 @@ class KGEnhancer:
         self.logger = setup_logger(self.__class__.__name__)
         self.rank = rank
         self.output_folder = output_folder
-        self.all_entities = set(self.data_loader.entity2name.keys())
 
         # 配置参数
         self.budget_per_entity = budget_per_entity
@@ -83,8 +82,7 @@ class KGEnhancer:
             embedding_path=embedding_path,
             device=device,
             dtype=dtype,
-            batch_size=batch_size,
-            no_sample=no_sample
+            batch_size=batch_size
         )
 
         # 初始化MCTS
@@ -92,6 +90,8 @@ class KGEnhancer:
             rank=self.rank,
             exploration_weight=exploration_weight
         )
+
+        self.all_entities = set(self.data_loader.entity2name.keys())
 
         self.logger.info("KGEnhancer initialized successfully")
 

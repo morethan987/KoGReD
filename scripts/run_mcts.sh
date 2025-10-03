@@ -1,17 +1,17 @@
 #!/bin/bash
 # MCTS启动脚本
-# 使用方法: cdko && acko && bash scripts/run_mcts.sh
+# 使用方法: cdko && ackopa && bash scripts/run_mcts.sh
 
 # 路径设置
 DATA_PATH='data/FB15K-237N'
-MODEL_PATH='/home/ma-user/work/model/Alpaca-7B'
+MODEL_PATH='wxjiao/alpaca-7b'
 OUTPUT_DIR='MCTS/output/fb15k-237n'
-PROCESSED_DATA="MCTS/output/precessed_data.pth"
-LORA_PATH="LLM_Discriminator/output/alpaca-7b-fb"
+PROCESSED_DATA="$OUTPUT_DIR/processed_data.pth"
+LORA_PATH="LLM_Discriminator/output/alpaca7b_fb"
 EMBEDDING_PATH="$LORA_PATH/embeddings.pth"
 ENTITY2EMBEDDING_PATH="$DATA_PATH/entity2embedding.pth"
-KGE_MODEL='data/FB15K-237N-rotate.pth'
-DISCRIMINATOR_FOLDER="$pwd/LLM_Discriminator"
+KGE_MODEL='LLM_Discriminator/data/FB15K-237N-rotate.pth'
+DISCRIMINATOR_FOLDER="$PWD/LLM_Discriminator"
 LOG_DIR='MCTS/logs'
 TIME_STAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="$LOG_DIR/mcts_${TIME_STAMP}.log"
@@ -27,6 +27,7 @@ NPROC=$(( $(echo "$CUDA_VISIBLE_DEVICES" | tr -cd ',' | wc -c) + 1 ))
 # 创建目录及文件
 mkdir -p $LOG_DIR
 mkdir -p $OUTPUT_DIR
+mkdir -p "$OUTPUT_DIR/checkpoints"
 
 # 设置 tokenizers 并行化环境变量，避免警告
 export TOKENIZERS_PARALLELISM=false
@@ -60,7 +61,7 @@ nohup torchrun \
     --entity2embedding_path $ENTITY2EMBEDDING_PATH \
     --kge_path $KGE_MODEL \
     --discriminator_folder $DISCRIMINATOR_FOLDER \
-    --roor_dir $PWD \
+    --root_dir $PWD \
     --dtype fp16 \
     --exploration_weight 1.0 \
     --leaf_threshold 32 \

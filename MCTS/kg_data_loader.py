@@ -39,9 +39,12 @@ class KGDataLoader:
         self.entity2id = self._load_entity2id(entity2id_path)
         self.logger.debug(f"Loaded {len(self.entity2id)} entity ids")
 
+        # 加载ID到实体映射
+        self.id2entity = {v: k for k, v in self.entity2id.items()}
+
         # 加载实体到嵌入映射
-        self.entity2embedding = torch.load(entity2embedding_path)
-        self.logger.debug(f"Loaded entity embeddings with shape {self.entity2embedding.shape}")
+        self.entity2embedding = torch.load(entity2embedding_path, map_location='cpu')
+        self.logger.debug(f"Loaded {len( self.entity2embedding.keys() )} entity embeddings")
 
         # 加载实体描述
         self.entity2description = self._load_entity2description(
@@ -65,28 +68,22 @@ class KGDataLoader:
                 for line in f:
                     line = line.strip()
                     if line:
-                        parts = line.split('\t', 1)
-                        if len(parts) == 2:
-                            entity_id, name = parts
-                            entity2name[entity_id] = name
+                        entity_id, name = line.split('\t', 1)
+                        entity2name[entity_id] = name
         except Exception as e:
             self.logger.error(
                 f"Error loading entity2name from {file_path}: {e}")
             raise
         return entity2name
 
-    def _load_relation2id(self, file_path: str) -> Dict[str, str]:
+    def _load_relation2id(self, file_path: str) -> Dict[str, int]:
         """加载关系到ID映射"""
         relation2id = {}
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in f:
-                    line = line.strip()
-                    if line:
-                        parts = line.split('\t', 1)
-                        if len(parts) == 2:
-                            relation, rel_id = parts
-                            relation2id[relation] = rel_id
+                    relation, rel_id = line.split('\t', 1)
+                    relation2id[relation] = int(rel_id)
         except Exception as e:
             self.logger.error(
                 f"Error loading relation2id from {file_path}: {e}")
@@ -99,12 +96,8 @@ class KGDataLoader:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in f:
-                    line = line.strip()
-                    if line:
-                        parts = line.split('\t', 1)
-                        if len(parts) == 2:
-                            entity_id, ent_id = parts
-                            entity2id[entity_id] = ent_id
+                    entity_id, ent_id = line.split('\t', 1)
+                    entity2id[entity_id] = int(ent_id)
         except Exception as e:
             self.logger.error(
                 f"Error loading entity2id from {file_path}: {e}")
@@ -119,10 +112,8 @@ class KGDataLoader:
                 for line in f:
                     line = line.strip()
                     if line:
-                        parts = line.split('\t', 1)
-                        if len(parts) == 2:
-                            entity_id, description = parts
-                            entity2description[entity_id] = description
+                        entity_id, description = line.split('\t', 1)
+                        entity2description[entity_id] = description
         except Exception as e:
             self.logger.error(
                 f"Error loading entity2description from {file_path}: {e}")
