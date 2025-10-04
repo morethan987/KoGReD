@@ -300,6 +300,24 @@ class OpenKEClient:
         score = self._predict(h, r, t)
         return score.item()
 
+    def get_tail2score(self, sparse_entity_id: int, relation_id: int, candidate_ids: List[int]):
+        """return: {tail_id: score}"""
+        h = torch.tensor([sparse_entity_id], dtype=torch.long, device=self.device).repeat(len(candidate_ids))
+        r = torch.tensor([relation_id], dtype=torch.long, device=self.device).repeat(len(candidate_ids))
+        t = torch.tensor(candidate_ids, dtype=torch.long, device=self.device)
+
+        scores = self._predict(h, r, t)
+        return {tid: score.item() for tid, score in zip(candidate_ids, scores)}
+
+    def get_head2score(self, sparse_entity_id: int, relation_id: int, candidate_ids: List[int]):
+        """return: {head_id: score}"""
+        t = torch.tensor([sparse_entity_id], dtype=torch.long, device=self.device).repeat(len(candidate_ids))
+        r = torch.tensor([relation_id], dtype=torch.long, device=self.device).repeat(len(candidate_ids))
+        h = torch.tensor(candidate_ids, dtype=torch.long, device=self.device)
+
+        scores = self._predict(h, r, t)
+        return {hid: score.item() for hid, score in zip(candidate_ids, scores)}
+
     def get_tail(self, head_id: int, rel_id: int, topk: int = 10):
         """
         给定头实体和关系，预测最可能的 Top-K 尾实体。

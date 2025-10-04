@@ -204,11 +204,20 @@ class SearchNode(ABC):
                          self.data_loader.entity2id[tail_code]]
         return {"input": input_text, "embedding_ids": embedding_ids}
 
+    def _get_root(self) -> 'SearchRootNode':
+        """向上遍历直到找到根节点"""
+        node = self
+        while node.parent is not None:
+            node = node.parent
+        return node
 
 class SearchRootNode(SearchNode):
     """搜索根节点"""
 
     def __init__(self, context: Context):
+        self._kge_rank_map = None
+        self._graph_rank_map = None
+        self._llm_rank_map = None
         super().__init__(context)
         self.candidate_entities = self._filter()
 
@@ -229,59 +238,53 @@ class KGENode(SearchNode):
         if not self.unfiltered_entities:
             return set()
 
-        # 获取当前实体和关系的ID
-        sparse_entity_id = self.data_loader.entity2id.get(self.sparse_entity)
-        relation_id = self.data_loader.relation2id.get(self.relation)
+        root = self._get_root()
 
-        if sparse_entity_id is None or relation_id is None:
-            self.logger.warning(
-                "Sparse entity or relation not found in data loader.")
-            return set()
+        # 检查缓存
+        if root._kge_rank_map is None:
+            # 缓存未命中
+            self.logger.info("KGENode cache miss. Calculating scores for all root candidates.")
+            all_candidates = root.unfiltered_entities
 
-        # 候选实体转ID列表
-        candidate_ids = [
-            self.data_loader.entity2id[ent]
-            for ent in self.unfiltered_entities
-            if ent in self.data_loader.entity2id
-        ]
+            sparse_entity_id = self.data_loader.entity2id.get(self.sparse_entity)
+            relation_id = self.data_loader.relation2id.get(self.relation)
 
-        if not candidate_ids:
-            self.logger.warning(
-                "No valid candidate entities to filter with KGE.")
-            return set()
+            candidate_ids = [self.data_loader.entity2id[e] for e in all_candidates if e in self.data_loader.entity2id]
 
-        try:
-            if self.position == 'head':
-                # 固定 head 和 relation，筛选 tail
-                top_ids = self.kge_model.get_top_p_tails(
-                    head_id=sparse_entity_id,
-                    rel_id=relation_id,
-                    candidate_tails=candidate_ids,
-                    p=top_p
-                )
-            elif self.position == 'tail':
-                # 固定 tail 和 relation，筛选 head
-                top_ids = self.kge_model.get_top_p_heads(
-                    tail_id=sparse_entity_id,
-                    rel_id=relation_id,
-                    candidate_heads=candidate_ids,
-                    p=top_p
-                )
-            else:
-                raise ValueError(f"Invalid position: {self.position}")
-        except Exception as e:
-            self.logger.error(f"Error during KGE filtering: {e}")
-            return set()
+            if not candidate_ids:
+                self.logger.warning("No valid candidate entities to filter with KGE.")
+                root._kge_rank_map = {}
+                return set()
 
-        # 将ID映射回实体名称
-        id2entity = self.data_loader.id2entity
-        filtered_entities = {
-            id2entity[idx] for idx in top_ids if idx in id2entity
-        }
+            try:
+                if self.position == 'head':
+                    # get_tail2score 返回一个字典 {tail_id: score}
+                    scores = self.kge_model.get_tail2score(sparse_entity_id, relation_id, candidate_ids)
+                else: # tail
+                    scores = self.kge_model.get_head2score(sparse_entity_id, relation_id, candidate_ids)
+
+                sorted_ids = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+                id2entity = self.data_loader.id2entity
+                sorted_entities = [id2entity[idx] for idx, _ in sorted_ids]
+                root._kge_rank_map = {entity: i for i, entity in enumerate(sorted_entities)}
+
+            except Exception as e:
+                self.logger.error(f"Error during KGE scoring: {e}")
+                root._kge_ranked_list = []
+                return set()
+
+        # --- 使用缓存进行过滤 ---
+        current_ranked_subset = sorted(
+            self.unfiltered_entities,
+            key=lambda e: root._graph_rank_map.get(e, float('inf'))
+        )
+
+        keep_count = max(1, int(len(current_ranked_subset) * top_p))
+        candidate_entities = set(current_ranked_subset[:keep_count])
 
         rank_logger(self.logger, self.rank)(
-            f"KGENode filtered {len(filtered_entities)} entities from {len(candidate_ids)} candidates.")
-        return filtered_entities
+            f"KGENode filtered {len(candidate_entities)} entities from {len(self.unfiltered_entities)} candidates using cache.")
+        return candidate_entities
 
 
 class GraphNode(SearchNode):
@@ -293,64 +296,43 @@ class GraphNode(SearchNode):
 
     def _filter(self, top_p: float = 0.5) -> Set[str]:
         """基于图结构的启发式方法进行过滤"""
-
         if not self.unfiltered_entities:
             return set()
 
-        # 在循环外计算一次稀疏实体的一跳邻居，避免重复计算
-        sparse_neighbors = set(
-            self.data_loader.get_one_hop_neighbors(self.sparse_entity))
+        root = self._get_root()
 
-        # 计算各种评分
-        structural_scores = {}
-        semantic_scores = {}
-        popularity_scores = {}
+        # 检查根节点是否有缓存
+        if root._graph_rank_map is None:
+            # 缓存未命中
+            self.logger.info("GraphNode cache miss. Calculating scores and building rank map.")
 
-        for entity in self.unfiltered_entities:
-            # 将 sparse_neighbors 作为参数传入
-            structural_scores[entity] = self._calculate_structural_similarity(
-                entity, sparse_neighbors)
-            # semantic_scores[entity] = self._calculate_semantic_similarity(
-            #     entity)
-            semantic_scores[entity] = 0  # 暂时不使用语义相似度
-            popularity_scores[entity] = self._calculate_relation_popularity(
-                entity)
+            all_candidates = root.unfiltered_entities
+            sparse_neighbors = set(self.data_loader.get_one_hop_neighbors(self.sparse_entity))
 
-        # 归一化评分
-        def normalize_scores(scores_dict):
-            if not scores_dict:
-                return scores_dict
-            max_score = max(scores_dict.values())
-            if max_score == 0:
-                return scores_dict
-            return {k: v / max_score for k, v in scores_dict.items()}
+            combined_scores = {}
+            for entity in all_candidates:
+                 structural_score = self._calculate_structural_similarity(entity, sparse_neighbors)
+                 semantic_score = 0
+                 popularity_score = self._calculate_relation_popularity(entity)
+                 combined_scores[entity] = (0.4 * structural_score + 0.3 * semantic_score + 0.3 * popularity_score)
 
-        structural_scores = normalize_scores(structural_scores)
-        semantic_scores = normalize_scores(semantic_scores)
-        popularity_scores = normalize_scores(popularity_scores)
+            # 对所有候选实体进行一次性排序
+            sorted_entities = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
 
-        # 计算综合评分（可调整权重）
-        alpha, beta, gamma = 0.4, 0.3, 0.3  # 结构、语义、热度权重
-        combined_scores = {}
+            # 构建从实体到排名的映射
+            root._graph_rank_map = {entity: i for i, (entity, _) in enumerate(sorted_entities)}
 
-        for entity in self.unfiltered_entities:
-            combined_scores[entity] = (
-                alpha * structural_scores.get(entity, 0) +
-                beta * semantic_scores.get(entity, 0) +
-                gamma * popularity_scores.get(entity, 0)
-            )
+        # --- 使用缓存进行过滤 ---
+        current_ranked_subset = sorted(
+            self.unfiltered_entities,
+            key=lambda e: root._graph_rank_map.get(e, float('inf'))
+        )
 
-        # 排序并选择前p比例的实体
-        sorted_entities = sorted(
-            combined_scores.items(), key=lambda x: x[1], reverse=True)
-        keep_count = max(1, int(len(sorted_entities) * top_p))
+        keep_count = max(1, int(len(current_ranked_subset) * top_p))
+        candidate_entities = set(current_ranked_subset[:keep_count])
 
-        # 返回候选实体集合
-        candidate_entities = {
-            entity for entity, _ in sorted_entities[:keep_count]
-        }
         rank_logger(self.logger, self.rank)(
-            f"GraphNode filtered {len(candidate_entities)} entities from {len(self.unfiltered_entities)} candidates.")
+            f"GraphNode filtered {len(candidate_entities)} entities from {len(self.unfiltered_entities)} candidates using rank map.")
         return candidate_entities
 
     def _extract_keywords_from_description(self, entity_id: str, top_k: int = 5) -> List[str]:
@@ -447,23 +429,36 @@ class LLMNode(SearchNode):
 
     def _filter(self, top_p: float = 0.3) -> Set[str]:
         """基于LLM的语义分析进行过滤"""
-        feature_embeddings = self._get_target_embedding().reshape(-1, 1)
+        if not self.unfiltered_entities:
+            return set()
 
-        # 获取候选实体名称的嵌入
-        unfiltered_entities_list = list(self.unfiltered_entities)
-        entity_embeddings = np.array([
-            self.data_loader.entity2embedding[ent] for ent in unfiltered_entities_list
-        ])
+        root = self._get_root()
 
-        # 计算相似度
-        scores = np.dot(entity_embeddings, feature_embeddings).flatten()
+        if root._llm_rank_map is None:
+            # 缓存未命中
+            self.logger.info("LLMNode cache miss. Calculating scores for all root candidates.")
+            all_candidates_list = list(root.unfiltered_entities)
 
-        # 选择 top_p 的实体
-        num_top = max(1, int(len(unfiltered_entities_list) * top_p))
-        top_indices = np.argpartition(scores, -num_top)[-num_top:]
-        top_entities = [unfiltered_entities_list[i] for i in top_indices]
+            feature_embeddings = self._get_target_embedding().reshape(-1, 1)
+            entity_embeddings = np.array([
+                self.data_loader.entity2embedding[ent] for ent in all_candidates_list
+            ])
+            scores = np.dot(entity_embeddings, feature_embeddings).flatten()
 
-        candidate_entities = set(top_entities)
+            # 排序并缓存
+            sorted_indices = np.argsort(scores)[::-1] # 降序
+            sorted_entities = [all_candidates_list[i] for i in sorted_indices]
+            root._llm_rank_map = {entity: i for i, entity in enumerate(sorted_entities)}
+
+        # --- 使用缓存进行过滤 ---
+        current_ranked_subset = sorted(
+            self.unfiltered_entities,
+            key=lambda e: root._llm_rank_map.get(e, float('inf'))
+        )
+
+        num_top = max(1, int(len(current_ranked_subset) * top_p))
+        candidate_entities = set(current_ranked_subset[:num_top])
+
         rank_logger(self.logger, self.rank)(
-            f"LLMNode filtered {len(candidate_entities)} entities from {len(self.unfiltered_entities)} candidates.")
+            f"LLMNode filtered {len(candidate_entities)} entities from {len(self.unfiltered_entities)} candidates using cache.")
         return candidate_entities
