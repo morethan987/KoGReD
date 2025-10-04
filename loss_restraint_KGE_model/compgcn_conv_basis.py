@@ -1,5 +1,5 @@
 from helper import *
-from loss_restraint_KGE_model.message_passing import MessagePassing
+from message_passing import MessagePassing
 
 class CompGCNConvBasis(MessagePassing):
 	def __init__(self, in_channels, out_channels, num_rels, num_bases, act=lambda x:x, cache=True, params=None):
@@ -25,7 +25,7 @@ class CompGCNConvBasis(MessagePassing):
 
 		self.drop		= torch.nn.Dropout(self.p.dropout)
 		self.bn			= torch.nn.BatchNorm1d(out_channels)
-		
+
 		self.in_norm, self.out_norm,
 		self.in_index, self.out_index,
 		self.in_type, self.out_type,
@@ -52,7 +52,7 @@ class CompGCNConvBasis(MessagePassing):
 
 			self.in_norm     = self.compute_norm(self.in_index,  num_ent)
 			self.out_norm    = self.compute_norm(self.out_index, num_ent)
-		
+
 		in_res		= self.propagate('add', self.in_index,   x=x, edge_type=self.in_type,   rel_embed=rel_embed, edge_norm=self.in_norm, 	mode='in')
 		loop_res	= self.propagate('add', self.loop_index, x=x, edge_type=self.loop_type, rel_embed=rel_embed, edge_norm=None, 		mode='loop')
 		out_res		= self.propagate('add', self.out_index,  x=x, edge_type=self.out_type,  rel_embed=rel_embed, edge_norm=self.out_norm,	mode='out')

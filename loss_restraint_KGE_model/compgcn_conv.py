@@ -1,5 +1,5 @@
-from helper import get_param
-from loss_restraint_KGE_model.message_passing import MessagePassing
+from helper import *
+from message_passing import MessagePassing
 
 
 class CompGCNConv(MessagePassing):

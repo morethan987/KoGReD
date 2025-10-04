@@ -5,6 +5,7 @@ import numpy as np
 from ordered_set import OrderedSet
 from collections import defaultdict as ddict
 from pprint import pprint
+import os
 from helper import *
 from data_loader import *
 # sys.path.append('./')
@@ -28,17 +29,17 @@ class Runner(object):
         self.entity_mrr_totals = {}
         self.entity_count = {}
         self.entity_mrr_average = {}
-        self.logger = get_logger(
-            self.p.name, self.p.log_dir, self.p.config_dir)
+        # self.logger = get_logger(
+        #     self.p.name, self.p.log_dir, self.p.config_dir)
+        self.logger = get_logger(self.p.name)
 
         self.logger.info(vars(self.p))
         pprint(vars(self.p))
 
-        # Setup device with NPU/GPU support
-        self.device, self.device_ids, self.device_type = setup_device(
-            gpu_ids=self.p.gpu,
-            npu_ids=self.p.npu,
-            prefer_npu=getattr(self.p, 'prefer_npu', True)
+        self.device, self.device_type = setup_device(
+            gpu_id=self.p.gpu,
+            npu_id=self.p.npu,
+            prefer_npu=getattr(self.p, 'prefer_npu', False)
         )
 
         # update self.p
@@ -53,9 +54,6 @@ class Runner(object):
 
         self.logger.info(
             f"Using device: {self.device}, device_type: {self.device_type}")
-        if len(self.device_ids) > 1:
-            self.logger.info(
-                f"Multi-device training with {len(self.device_ids)} devices: {self.device_ids}")
 
         self.load_data()
         self.model = self.add_model(self.p.model, self.p.score_func)
@@ -96,6 +94,7 @@ class Runner(object):
         self.rel2id = {rel: idx for idx, rel in enumerate(rel_set)}
         self.rel2id.update({rel+'_reverse': idx+len(self.rel2id)
                         for idx, rel in enumerate(rel_set)})
+        self.save_id_config()
 
         self.id2ent = {idx: ent for ent, idx in self.ent2id.items()}
         self.id2rel = {idx: rel for rel, idx in self.rel2id.items()}
@@ -186,9 +185,7 @@ class Runner(object):
         self.triples = dict(self.triples)
 
         def get_data_loader(dataset_class, split, batch_size, shuffle=True):
-            # 多卡训练时禁用多进程以避免进程冲突
-            num_workers = 0 if len(self.device_ids) > 1 else max(
-                0, self.p.num_workers)
+            num_workers = max(0, self.p.num_workers)
             return DataLoader(
                 dataset_class(self.triples[split], self.p),
                 batch_size=batch_size,
@@ -263,34 +260,6 @@ class Runner(object):
 
         model.to(self.device)
 
-        # Enable multi-device training if multiple devices are available
-        if len(self.device_ids) > 1:
-            try:
-                if self.device_type == 'npu':
-                    # Use NPU DataParallel
-                    import torch_npu
-                    self.logger.info(
-                        f"Attempting to create NPU DataParallel with devices: {self.device_ids}")
-                    model = torch.nn.DataParallel(
-                        model, device_ids=self.device_ids)
-                    self.logger.info(
-                        f"Successfully enabled NPU DataParallel with devices: {self.device_ids}")
-                elif self.device_type == 'gpu':
-                    # Use GPU DataParallel
-                    self.logger.info(
-                        f"Attempting to create GPU DataParallel with devices: {self.device_ids}")
-                    model = torch.nn.DataParallel(
-                        model, device_ids=self.device_ids)
-                    self.logger.info(
-                        f"Successfully enabled GPU DataParallel with devices: {self.device_ids}")
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to enable multi-device training: {str(e)}")
-                self.logger.warning(
-                    f"Falling back to single device training on {self.device}")
-                # 重新设置为单设备
-                self.device_ids = [self.device_ids[0]]
-
         return model
 
     def add_optimizer(self, parameters):
@@ -332,6 +301,15 @@ class Runner(object):
         else:
             triple, label = [_.to(self.device) for _ in batch]
             return triple[:, 0], triple[:, 1], triple[:, 2], label
+
+    def save_id_config(self):
+        """将id配置保存到txt文件中"""
+        with open(f'{self.p.save_dir}/entity2id.txt', 'w') as f:
+            for ent, idx in self.ent2id.items():
+                f.write(f'{ent}\t{idx}\n')
+        with open(f'{self.p.save_dir}/relation2id.txt', 'w') as f:
+            for rel, idx in self.rel2id.items():
+                f.write(f'{rel}\t{idx}\n')
 
     def save_model(self, save_path):
         """
@@ -547,6 +525,19 @@ class Runner(object):
         for epoch in range(self.p.max_epochs):
             train_loss = self.run_epoch(epoch, val_mrr, clean_rate)
             val_results = self.evaluate('valid', epoch)
+            if epoch % 30 == 0:
+                test_results = self.evaluate('test', epoch)
+                self.logger.info('\nTest set results:')
+                self.logger.info(
+                    f'Epoch {epoch}: MRR: Tail : {test_results["left_mrr"]:.5}, Head : {test_results["right_mrr"]:.5}, Avg : {test_results["mrr"]:.5}')
+                self.logger.info(
+                    f'Epoch {epoch}: MR: Tail : {test_results["left_mr"]:.5}, Head : {test_results["right_mr"]:.5}, Avg : {test_results["mr"]:.5}')
+                self.logger.info(
+                    f'Epoch {epoch}: left_hits@1: Tail : {test_results["left_hits@1"]:.5}, Head : {test_results["right_hits@1"]:.5}, Avg : {test_results["hits@1"]:.5}')
+                self.logger.info(
+                    f'Epoch {epoch}: left_hits@3: Tail : {test_results["left_hits@3"]:.5}, Head : {test_results["right_hits@3"]:.5}, Avg : {test_results["hits@3"]:.5}')
+                self.logger.info(
+                    f'Epoch {epoch}: left_hits@10: Tail : {test_results["left_hits@10"]:.5}, Head : {test_results["right_hits@10"]:.5}, Avg : {test_results["hits@10"]:.5}\n')
 
             if val_results['mrr'] > self.best_val_mrr:
                 self.best_val = val_results
@@ -574,19 +565,20 @@ class Runner(object):
         self.logger.info('Loading best model, Evaluating on Test data')
         self.load_model(save_path)
         test_results = self.evaluate('test', epoch)
+        self.logger.info('\nFinal Test set results:')
         self.logger.info(
-            f'[Epoch 1 test]: MRR: Tail : {test_results["left_mrr"]:.5}, Head : {test_results["right_mrr"]:.5}, Avg : {test_results["mrr"]:.5}')
+            f'Final results: MRR: Tail : {test_results["left_mrr"]:.5}, Head : {test_results["right_mrr"]:.5}, Avg : {test_results["mrr"]:.5}')
         self.logger.info(
-            f'[Epoch 1 test]: MR: Tail : {test_results["left_mr"]:.5}, Head : {test_results["right_mr"]:.5}, Avg : {test_results["mr"]:.5}')
+            f'Final results: MR: Tail : {test_results["left_mr"]:.5}, Head : {test_results["right_mr"]:.5}, Avg : {test_results["mr"]:.5}')
         self.logger.info(
-            f'[Epoch 1 test]: left_hits@1: Tail : {test_results["left_hits@1"]:.5}, Head : {test_results["right_hits@1"]:.5}, Avg : {test_results["hits@1"]:.5}')
+            f'Final results: left_hits@1: Tail : {test_results["left_hits@1"]:.5}, Head : {test_results["right_hits@1"]:.5}, Avg : {test_results["hits@1"]:.5}')
         self.logger.info(
-            f'[Epoch 1 test]: left_hits@3: Tail : {test_results["left_hits@3"]:.5}, Head : {test_results["right_hits@3"]:.5}, Avg : {test_results["hits@3"]:.5}')
+            f'Final results: left_hits@3: Tail : {test_results["left_hits@3"]:.5}, Head : {test_results["right_hits@3"]:.5}, Avg : {test_results["hits@3"]:.5}')
         self.logger.info(
-            f'[Epoch 1 test]: left_hits@10: Tail : {test_results["left_hits@10"]:.5}, Head : {test_results["right_hits@10"]:.5}, Avg : {test_results["hits@10"]:.5}')
+            f'Final results: left_hits@10: Tail : {test_results["left_hits@10"]:.5}, Head : {test_results["right_hits@10"]:.5}, Avg : {test_results["hits@10"]:.5}')
 
 
-if name == 'main':
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(
     description='Parser For Arguments', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--name', dest='name', default='testrun', help='Set run name for saving/restoring models')
@@ -597,8 +589,8 @@ if name == 'main':
 
     parser.add_argument('--batch', dest='batch_size', default=128, type=int, help='Batch size')
     parser.add_argument('--gamma', default=40.0, type=float, help='Margin')
-    parser.add_argument('--gpu',dest='gpu',default='-1',type=str, help='Set GPU Ids : Eg: For CPU = -1, For Single GPU = 0, For Multi GPU = 0,1,2')
-    parser.add_argument('--npu',dest='npu',default='-1',type=str, help='Set NPU Ids : Eg: For CPU = -1, For Single NPU = 0, For Multi NPU = 0,1,2')
+    parser.add_argument('--gpu',dest='gpu',default='-1',type=int, help='Set GPU Ids : Eg: For CPU = -1, For Single GPU = 0')
+    parser.add_argument('--npu',dest='npu',default='-1',type=int, help='Set NPU Ids : Eg: For CPU = -1, For Single NPU = 0')
     parser.add_argument('--prefer_npu',dest='prefer_npu',action='store_true', help='Prefer NPU over GPU when both are available')
     parser.add_argument('--epoch',dest='max_epochs', default=500,type=int,help='Number of epochs')
     parser.add_argument('--l2',default=0.0, type=float,help='L2 Regularization for Optimizer')
@@ -626,8 +618,6 @@ if name == 'main':
     parser.add_argument('--num_filt', dest='num_filt', default=200, type=int, help='ConvE: Number of filters in convolution')
     parser.add_argument('--ker_sz', dest='ker_sz', default=7, type=int, help='ConvE: Kernel size to use')
 
-    parser.add_argument('--logdir', dest='log_dir', default='./log/', help='Log directory')
-    parser.add_argument('--config', dest='config_dir', default='./config/', help='Config directory')
     parser.add_argument('--save', dest='save_dir', required=True, help='The directory to save the model checkpoints')
     parser.add_argument('--adapt_aggr', dest='adapt_aggr', default=-1, type=int, help='use adaptive message aggregator or not')
     parser.add_argument('--time_string', dest='time_string', default='', type=str, help='restore adaptive message aggregator from a file')
@@ -640,8 +630,6 @@ if name == 'main':
 
     if not args.restore:
         args.name = args.name + '_' + args.time_string
-
-    # Setup devices based on NPU/GPU preference, handled in Runner.__init__
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)

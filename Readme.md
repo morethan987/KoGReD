@@ -1,5 +1,11 @@
 # KoGReD
 
+monitor checkpoint:
+
+```bash
+cdko && ackopa && python MCTS/process_checkpoints.py && mv MCTS/output/fb15k-237n/checkpoints/temp.txt data/FB15K-237N/auxiliary_triples.txt && acko && cdko && python data/data_preview.py
+```
+
 ### Dependencies
 - Dependencies can be installed using `requirements.txt`.
 

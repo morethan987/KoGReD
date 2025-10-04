@@ -25,12 +25,12 @@ class CompGCNConv_adapt(MessagePassing):
 		self.bn			= torch.nn.BatchNorm1d(out_channels)
 
 		self.leaky_relu = torch.nn.LeakyReLU(negative_slope=0.2, inplace=True)
-		self.a = torch.nn.Linear(out_channels, 1, bias=False).cuda()
+		self.a = torch.nn.Linear(out_channels, 1, bias=False)
 		self.drop_ratio = self.p.dropout
 
 		if self.p.bias: self.register_parameter('bias', Parameter(torch.zeros(out_channels)))
 
-	def forward(self, x, edge_index, edge_type, rel_embed): 
+	def forward(self, x, edge_index, edge_type, rel_embed):
 		if self.device is None:
 			self.device = edge_index.device
 
@@ -41,7 +41,7 @@ class CompGCNConv_adapt(MessagePassing):
 
 		self.in_norm     = self.compute_norm(self.in_index,  num_ent)
 		self.out_norm    = self.compute_norm(self.out_index, num_ent)
-		
+
 		in_res = self.propagate(edge_index=edge_index, x=x, edge_type=edge_type, rel_emb=rel_embed, in_norm = self.in_norm, out_norm = self.out_norm)
 		loop_res = torch.mm(x, self.w_loop)
 		out = self.drop(in_res) + self.drop(loop_res)
@@ -64,7 +64,7 @@ class CompGCNConv_adapt(MessagePassing):
 	# 	out	= torch.mm(xj_rel, weight)
 
 	# 	return out if edge_norm is None else out * edge_norm.view(-1, 1)
-	
+
 	def message(self,x_i, x_j, edge_type, rel_emb, ptr, index, size_i, in_norm, out_norm):
 		rel_emb = torch.index_select(rel_emb, 0, edge_type)
 		xj_rel = self.rel_transform(x_j, rel_emb)
@@ -74,7 +74,7 @@ class CompGCNConv_adapt(MessagePassing):
 		trans_in = torch.mm(in_message, self.w_in)
 		trans_out = torch.mm(out_message, self.w_out)
 		# out = torch.cat((trans_in, trans_out), dim=0)
-		b = self.leaky_relu(torch.mm((torch.cat((x_i, rel_emb, x_j), dim=1)), self.w_attn)).cuda()
+		b = self.leaky_relu(torch.mm((torch.cat((x_i, rel_emb, x_j), dim=1)), self.w_attn))
 		b = self.a(b).float()
 		alpha = softmax(b, index, ptr, size_i)
 		alpha = F.dropout(alpha, p=self.drop_ratio)
@@ -92,7 +92,7 @@ class CompGCNConv_adapt(MessagePassing):
 		row, col	= edge_index
 		edge_weight 	= torch.ones_like(row).float()
 		deg		= scatter_add( edge_weight, row, dim=0, dim_size=num_ent)	# Summing number of weights of the edges
-		deg_inv		= deg.pow(-0.5)							
+		deg_inv		= deg.pow(-0.5)
 		deg_inv[deg_inv	== float('inf')] = 0
 		norm		= deg_inv[row] * edge_weight * deg_inv[col]
 

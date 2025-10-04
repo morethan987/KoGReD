@@ -1,8 +1,8 @@
 import math
 from helper import *
-from loss_restraint_KGE_model.compgcn_conv import CompGCNConv
-from loss_restraint_KGE_model.compgcn_conv_basis import CompGCNConvBasis
-from KoGReD.loss_restraint_KGE_model.compgcn_conv_adapt import CompGCNConv_adapt
+from compgcn_conv import CompGCNConv
+from compgcn_conv_basis import CompGCNConvBasis
+from compgcn_conv_adapt import CompGCNConv_adapt
 
 class BaseModel(torch.nn.Module):
 	def __init__(self, params):
@@ -15,11 +15,11 @@ class BaseModel(torch.nn.Module):
 
 	def loss(self, pred, true_label):
 		return self.bceloss(pred, true_label)
-	
+
 	def modify_loss(self, pred, true_label, obeserved_label, clean_rate):  # pred.shape == true_label.shape = [batch_size, entity_num]
-		
+
 		batch_size = int(pred.size()[0]) # 取出batch_size用于后面计算需要舍弃的噪声样本的数量
-		num_classes = int(pred.size()[1])	
+		num_classes = int(pred.size()[1])
 
 		unobserved_mask = (obeserved_label == 0)
 
@@ -38,9 +38,9 @@ class BaseModel(torch.nn.Module):
 		main_loss = final_loss_matrix.mean()
 
 		return main_loss
-	
+
 	def modify_loss_only_add(self, pred, true_label, newadd_label, clean_rate):  # pred.shape == true_label.shape = [batch_size, entity_num]
-		
+
 		batch_size = int(pred.size()[0]) # 取出batch_size用于后面计算需要舍弃的噪声样本的数量
 		num_classes = int(pred.size()[1])
 
@@ -63,7 +63,7 @@ class BaseModel(torch.nn.Module):
 		main_loss = final_loss_matrix.mean()
 
 		return main_loss
-		
+
 class CompGCNBase(BaseModel):
 	def __init__(self, edge_index, edge_type, num_rel, params=None):
 		super(CompGCNBase, self).__init__(params)
@@ -116,7 +116,7 @@ class CompGCN_TransE(CompGCNBase):
 		sub_emb, rel_emb, all_ent	= self.forward_base(sub, rel, self.drop, self.drop)
 		obj_emb				= sub_emb + rel_emb
 
-		x	= self.p.gamma - torch.norm(obj_emb.unsqueeze(1) - all_ent, p=1, dim=2)		
+		x	= self.p.gamma - torch.norm(obj_emb.unsqueeze(1) - all_ent, p=1, dim=2)
 		score	= torch.sigmoid(x)
 
 		return score
@@ -144,7 +144,7 @@ class CompGCN_ConvE(CompGCNBase):
 		self.bn0		= torch.nn.BatchNorm2d(1)
 		self.bn1		= torch.nn.BatchNorm2d(self.p.num_filt)
 		self.bn2		= torch.nn.BatchNorm1d(self.p.embed_dim)
-		
+
 		self.hidden_drop	= torch.nn.Dropout(self.p.hid_drop)
 		self.hidden_drop2	= torch.nn.Dropout(self.p.hid_drop2)
 		self.feature_drop	= torch.nn.Dropout(self.p.feat_drop)
@@ -182,7 +182,7 @@ class CompGCN_ConvE(CompGCNBase):
 
 		score = torch.sigmoid(x)
 		return score
-	
+
 class CompGCN_ConvE(CompGCNBase):
 	def __init__(self, edge_index, edge_type, params=None):
 		super(self.__class__, self).__init__(edge_index, edge_type, params.num_rel, params)
@@ -190,7 +190,7 @@ class CompGCN_ConvE(CompGCNBase):
 		self.bn0		= torch.nn.BatchNorm2d(1)
 		self.bn1		= torch.nn.BatchNorm2d(self.p.num_filt)
 		self.bn2		= torch.nn.BatchNorm1d(self.p.embed_dim)
-		
+
 		self.hidden_drop	= torch.nn.Dropout(self.p.hid_drop)
 		self.hidden_drop2	= torch.nn.Dropout(self.p.hid_drop2)
 		self.feature_drop	= torch.nn.Dropout(self.p.feat_drop)

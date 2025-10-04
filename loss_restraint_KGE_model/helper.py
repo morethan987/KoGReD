@@ -30,32 +30,98 @@ def set_gpu(gpus):
 	os.environ["CUDA_DEVICE_ORDER"]    = "PCI_BUS_ID"
 	os.environ["CUDA_VISIBLE_DEVICES"] = gpus
 
-def get_logger(name, log_dir, config_dir):
-	"""
-	Creates a logger object
+def setup_device(gpu_id, npu_id, prefer_npu=False):
+    """
+    设置计算设备（CPU, GPU, 或 NPU）。此版本为单卡训练优化。
 
-	Parameters
-	----------
-	name:           Name of the logger file
-	log_dir:        Directory where logger file needs to be stored
-	config_dir:     Directory from where log_config.json needs to be read
+    参数:
+    - gpu_id (int): GPU设备ID。-1 表示不使用GPU。
+    - npu_id (int): NPU设备ID。-1 表示不使用NPU。
+    - prefer_npu (bool): 如果为True，并且NPU和GPU都可用，则优先选择NPU。
 
-	Returns
-	-------
-	A logger object which writes to both file and stdout
+    返回:
+    - device (torch.device): PyTorch设备对象。
+    - device_type (str): 设备类型 ('gpu', 'npu', 'cpu')。
+    """
+    use_npu = False
+    use_gpu = False
 
-	"""
-	config_dict = json.load(open( config_dir + 'log_config.json'))
-	config_dict['handlers']['file_handler']['filename'] = log_dir + name.replace('/', '-')
-	logging.config.dictConfig(config_dict)
-	logger = logging.getLogger(name)
+    # 检查硬件可用性
+    npu_available = False
+    try:
+        import torch_npu
+        if torch_npu.npu.is_available():
+            npu_available = True
+    except ImportError:
+        pass
 
-	std_out_format = '%(asctime)s - [%(levelname)s] - %(message)s'
-	consoleHandler = logging.StreamHandler(sys.stdout)
-	consoleHandler.setFormatter(logging.Formatter(std_out_format))
-	logger.addHandler(consoleHandler)
+    gpu_available = torch.cuda.is_available()
 
-	return logger
+    # 决策逻辑
+    if prefer_npu and npu_available and npu_id != -1:
+        use_npu = True
+    elif gpu_available and gpu_id != -1:
+        use_gpu = True
+    elif npu_available and npu_id != -1: # 作为备选项
+        use_npu = True
+
+    # 配置设备
+    if use_npu:
+        if npu_id >= torch_npu.npu.device_count():
+            raise ValueError(f"NPU id {npu_id} is not available.")
+        device = torch.device(f'npu:{npu_id}')
+        device_type = 'npu'
+        print(f"Using NPU: {npu_id}")
+    elif use_gpu:
+        if gpu_id >= torch.cuda.device_count():
+            raise ValueError(f"GPU id {gpu_id} is not available.")
+        device = torch.device(f'cuda:{gpu_id}')
+        device_type = 'gpu'
+        print(f"Using GPU: {gpu_id}")
+    else:
+        device = torch.device('cpu')
+        device_type = 'cpu'
+        print("Using CPU")
+
+    return device, device_type
+
+def get_logger(name):
+    """
+    创建一个只将日志输出到控制台的 logger 对象。
+
+    Parameters
+    ----------
+    name: str
+        Logger 的名称。
+
+    Returns
+    -------
+    logging.Logger
+        一个将日志输出到标准输出 (stdout) 的 logger 对象。
+
+    """
+    # 获取指定名称的 logger 实例
+    logger = logging.getLogger(name)
+
+    # 设置 logger 的最低日志级别，避免被全局配置覆盖
+    # INFO 级别意味着 INFO, WARNING, ERROR, CRITICAL 级别的日志都会被处理
+    logger.setLevel(logging.INFO)
+
+    # 检查 logger 是否已经有关联的 handlers，防止重复添加
+    if not logger.handlers:
+        # 创建一个流处理器 (StreamHandler)，用于将日志输出到标准输出
+        console_handler = logging.StreamHandler(sys.stdout)
+
+        # 定义日志输出格式
+        formatter = logging.Formatter('%(asctime)s - [%(levelname)s] - %(message)s')
+
+        # 为处理器设置格式
+        console_handler.setFormatter(formatter)
+
+        # 将处理器添加到 logger
+        logger.addHandler(console_handler)
+
+    return logger
 
 def get_combined_results(left_results, right_results):
 	results = {}
