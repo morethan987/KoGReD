@@ -19,6 +19,7 @@ LOG_FILE="$LOG_DIR/mcts_${TIME_STAMP}.log"
 
 # 设置 NPU 环境变量
 export CUDA_VISIBLE_DEVICES=0,1,2
+export WORLD_SIZE=3
 export MASTER_ADDR=127.0.0.1
 export MASTER_PORT=29503
 NPROC=$(( $(echo "$CUDA_VISIBLE_DEVICES" | tr -cd ',' | wc -c) + 1 ))

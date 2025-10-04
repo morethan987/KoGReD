@@ -33,6 +33,7 @@ class Runner:
         )
 
         self.processed_data = torch.load(args.processed_data)
+        self.get_unprocessed(self.world_size)
         self.checkpoint_file = os.path.join(args.output_folder, f"checkpoints/checkpoint_rank_{self.rank}.json")
 
         self.enhancer = KGEnhancer(
@@ -91,6 +92,18 @@ class Runner:
             rank_logger(self.logger, self.rank)(f"Checkpoint saved: {len(self.processed_entities)} entities processed, {len(self.local_discovered_triplets)} triplets discovered.")
         except Exception as e:
             rank_logger(self.logger, self.rank)(f"Failed to save checkpoint: {e}")
+
+    def get_unprocessed(self, device_num: int):
+        """过滤掉已经处理过的实体"""
+        processed = set()
+        for i in range(device_num):
+            file = os.path.join(args.output_folder, f"checkpoints/checkpoint_rank_{i}.json")
+            if not os.path.exists(file):
+                continue
+            with open(file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                processed.update(data.get("processed_entities", []))
+        self.processed_data = {k: v for k, v in self.processed_data.items() if k not in processed}
 
     def run(self):
         items = list(self.processed_data.items())
@@ -152,6 +165,8 @@ class Runner:
 
         # 收集所有进程的结果
         if self.is_initialed:
+            print(f"Rank {self.rank} gathering results...")
+            dist.barrier()
             gathered = [None] * self.world_size if self.rank == 0 else None
             dist.all_gather_object(self.local_discovered_triplets, gathered, dest=0)
             if self.rank == 0:
