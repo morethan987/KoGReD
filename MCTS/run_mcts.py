@@ -168,10 +168,10 @@ class Runner:
             print(f"Rank {self.rank} gathering results...")
             dist.barrier()
             gathered = [None] * self.world_size if self.rank == 0 else None
-            dist.all_gather_object(self.local_discovered_triplets, gathered, dest=0)
+            dist.gather_object(self.local_discovered_triplets, gathered, dst=0)
             if self.rank == 0:
                 for triplet_list in gathered:
-                    self.all_discovered_triplets.extend(triplet_list)
+                    self.all_discovered_triplets.extend(tuple(triplet_list))
             else:
                 return
         else:
@@ -186,8 +186,8 @@ class Runner:
             f"\nSaving {len(self.all_discovered_triplets)} discovered triplets to {output_path}"
         )
         with open(output_path, 'w', encoding='utf-8') as f:
-            for head, rel, tail in self.all_discovered_triplets:
-                f.write(f"({head}\t{rel}\t{tail})\n")
+            for head, rel, tail in set(self.all_discovered_triplets):
+                f.write(f"{head}\t{rel}\t{tail}\n")
 
         rank_logger(self.logger, self.rank)(
             "Knowledge graph enhancement completed successfully!")
