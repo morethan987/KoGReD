@@ -111,4 +111,8 @@ if __name__ == "__main__":
     file2 = "data/FB15K-237N/valid.txt"
     file3 = "data/FB15K-237N/auxiliary_triples.txt"
     file4 = "data/FB15K-237N/true_triplets.txt"
-    kg_similarity(file1, file3)
+
+    file5 = "data/CoDEx-S/test.txt"
+    file6 = "data/CoDEx-S/valid.txt"
+    file7 = "data/CoDEx-S/auxiliary_triples.txt"
+    kg_similarity(file5, file7)

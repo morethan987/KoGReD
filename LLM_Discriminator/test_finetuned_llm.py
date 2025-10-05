@@ -34,7 +34,7 @@ def load_test_dataset(path):
 
 def main(args):
     # dist.init_process_group(backend='hccl')
-    dist.init_process_group(backend='hccl')
+    dist.init_process_group(backend='nccl')
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1)) # 获取总进程数
     # device = f"npu:{local_rank}"

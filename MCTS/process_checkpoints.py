@@ -20,4 +20,6 @@ def process_checkpoints(folder: str, num_checkpoints: int = 3):
 if __name__ == "__main__":
     # cdko && ackopa && python MCTS/process_checkpoints.py
     # mv MCTS/output/fb15k-237n/checkpoints/temp.txt data/FB15K-237N/auxiliary_triples.txt
-    process_checkpoints("MCTS/output/fb15k-237n/checkpoints")
+    # mv MCTS/output/codex-s/checkpoints/temp.txt data/CoDEx-S/auxiliary_triples.txt
+    # process_checkpoints("MCTS/output/fb15k-237n/checkpoints")
+    process_checkpoints("MCTS/output/codex-s/checkpoints")

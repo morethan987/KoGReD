@@ -4,11 +4,14 @@
 
 # 路径设置
 MODEL_PATH='wxjiao/alpaca-7b'
+# DATA_PATH='LLM_Discriminator/data/FB15K-237N-test.json'
 DATA_PATH='LLM_Discriminator/data/FB15K-237N-test.json'
-LORA_PATH="LLM_Discriminator/output/alpaca7b_fb"
+# LORA_PATH="LLM_Discriminator/output/alpaca7b_fb"
+LORA_PATH="LLM_Discriminator/output/alpaca7b_CoDeX-S"
 LOG_DIR='LLM_Discriminator/logs'
 TIME_STAMP=$(date +%Y%m%d_%H%M%S)
-LOG_FILE="$LOG_DIR/test_finetuned_llm_${TIME_STAMP}.log"
+# LOG_FILE="$LOG_DIR/test_fb15k_${TIME_STAMP}.log"
+LOG_FILE="$LOG_DIR/test_codex_${TIME_STAMP}.log"
 
 # 设置 NPU 环境变量
 export CUDA_VISIBLE_DEVICES=0,1,2

@@ -3,14 +3,14 @@
 # 使用方法: cdko && ackopa && bash scripts/train_loss_restrain_kge.sh
 
 # 路径设置
-DATA_SET='FB15K-237N'
-# DATA_SET='CoDEx-S'
-OUTPUT_DIR='loss_restraint_KGE_model/output/fb15k-237n'
-# OUTPUT_DIR='loss_restraint_KGE_model/output/codex-s'
+# DATA_SET='FB15K-237N'
+DATA_SET='CoDEx-S'
+# OUTPUT_DIR='loss_restraint_KGE_model/output/fb15k-237n'
+OUTPUT_DIR='loss_restraint_KGE_model/output/codex-s'
 LOG_DIR='loss_restraint_KGE_model/logs'
 TIME_STAMP=$(date +%Y%m%d_%H%M%S)
-LOG_FILE="$LOG_DIR/fb15k_${TIME_STAMP}.log"
-# LOG_FILE="$LOG_DIR/codex_${TIME_STAMP}.log"
+# LOG_FILE="$LOG_DIR/fb15k_${TIME_STAMP}.log"
+LOG_FILE="$LOG_DIR/codex_${TIME_STAMP}.log"
 
 # 创建目录及文件
 mkdir -p $LOG_DIR
@@ -49,7 +49,7 @@ nohup python loss_restraint_KGE_model/run.py \
 PID=$!
 {
     echo "========================================================="
-    echo "LoRA微调进程已启动, PID: $PID    日志文件: $LOG_FILE"
+    echo "loss_restrain_kge训练进程已启动, PID: $PID    日志文件: $LOG_FILE"
     echo "查看日志: tail -f $LOG_FILE"
     echo "停止进程: kill $PID"
     echo "========================================================="
