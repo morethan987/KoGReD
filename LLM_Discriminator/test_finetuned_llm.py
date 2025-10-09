@@ -143,5 +143,6 @@ if __name__ == "__main__":
     parser.add_argument("--base_model", type=str, required=True, help="Path to the base model")
     parser.add_argument("--test_data", type=str, required=True, help="Path to the test dataset")
     parser.add_argument("--lora_weights", type=str, required=True, help="Path to the LoRA weights")
+    parser.add_argument("--root_dir", type=str, default=".", help="Root directory for saving outputs")
     args = parser.parse_args()
     main(args)

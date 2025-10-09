@@ -103,7 +103,7 @@ def init_distributed(rank, local_rank, world_size):
                 backend=backend,
                 world_size=world_size,
                 rank=rank,
-                timeout=timedelta(hours=5)
+                timeout=timedelta(hours=10)
             )
             dist.barrier()  # 同步所有进程
 

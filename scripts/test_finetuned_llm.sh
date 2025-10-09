@@ -5,7 +5,7 @@
 # 路径设置
 MODEL_PATH='wxjiao/alpaca-7b'
 # DATA_PATH='LLM_Discriminator/data/FB15K-237N-test.json'
-DATA_PATH='LLM_Discriminator/data/FB15K-237N-test.json'
+DATA_PATH='LLM_Discriminator/data/CoDeX-S-test.json'
 # LORA_PATH="LLM_Discriminator/output/alpaca7b_fb"
 LORA_PATH="LLM_Discriminator/output/alpaca7b_CoDeX-S"
 LOG_DIR='LLM_Discriminator/logs'
@@ -39,15 +39,18 @@ if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" && "$CONFIRM" != "" ]]; then
     exit 0
 fi
 
+# test_with_discriminator.py
+# test_finetuned_llm.py
 nohup torchrun \
     --nnodes=1 \
     --nproc_per_node=$NPROC \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-    LLM_Discriminator/test_finetuned_llm.py \
+    LLM_Discriminator/test_with_discriminator.py \
     --base_model $MODEL_PATH \
     --test_data $DATA_PATH \
     --lora_weights $LORA_PATH \
+    --root_dir $PWD \
     >> $LOG_FILE 2>&1 &
 
 # 获取进程ID

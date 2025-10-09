@@ -109,6 +109,8 @@ class SearchNode(ABC):
 
     def is_terminal(self) -> bool:
         """判断是否为终端节点（候选实体数量小于阈值）"""
+        if not self.candidate_entities:
+                return True
         return len(self.candidate_entities) <= self.leaf_threshold
 
     def evaluate_candidates(self) -> Tuple[List[Tuple[str, str, str]], int]:
@@ -276,7 +278,7 @@ class KGENode(SearchNode):
         # --- 使用缓存进行过滤 ---
         current_ranked_subset = sorted(
             self.unfiltered_entities,
-            key=lambda e: root._graph_rank_map.get(e, float('inf'))
+            key=lambda e: root._kge_rank_map.get(e, float('inf'))
         )
 
         keep_count = max(1, int(len(current_ranked_subset) * top_p))
