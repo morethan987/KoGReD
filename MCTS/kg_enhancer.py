@@ -4,6 +4,7 @@ from kg_data_loader import KGDataLoader
 from model_calls import OpenKEClient
 from mcts_tree import MCTS
 from node import SearchRootNode, Context
+from rollout_policy import ContextualBanditRolloutPolicy
 from LLM_Discriminator.discriminator import TriplesDiscriminator
 from setup_logger import setup_logger
 
@@ -55,6 +56,9 @@ class KGEnhancer:
         self.leaf_threshold = leaf_threshold
         self.exploration_weight = exploration_weight
 
+        # 初始化策略类
+        self.rollout_policy = ContextualBanditRolloutPolicy()
+
         # 初始化数据加载器
         self.logger.info("Loading knowledge graph data...")
         self.data_loader = KGDataLoader(
@@ -88,7 +92,8 @@ class KGEnhancer:
         # 初始化MCTS
         self.mcts = MCTS(
             rank=self.rank,
-            exploration_weight=exploration_weight
+            exploration_weight=exploration_weight,
+            rollout_policy=self.rollout_policy
         )
 
         self.all_entities = set(self.data_loader.entity2name.keys())

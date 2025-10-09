@@ -66,7 +66,6 @@ class SearchNode(ABC):
         self.children = None
         self.logger = setup_logger(f"{self.__class__.__name__}")
 
-        self.llm_limit = 5000
 
     @abstractmethod
     def _filter(self):
@@ -82,10 +81,7 @@ class SearchNode(ABC):
     def find_random_child(self) -> 'SearchNode':
         """随机选择一个子节点"""
         child_context = self._make_child_context()
-        if len(child_context.unfiltered_entities) < self.llm_limit:
-            return random.choice([KGENode, GraphNode, LLMNode])(child_context)
-        else:
-            return random.choice([KGENode, GraphNode])(child_context)
+        return random.choice([KGENode, GraphNode, LLMNode])(child_context)
 
     def expand(self):
         """扩展根节点，生成不同的过滤策略子节点"""
@@ -104,8 +100,7 @@ class SearchNode(ABC):
         self.children.add(KGENode(child_context))
 
         # 3. 基于LLM的过滤节点
-        if len(child_context.unfiltered_entities) < self.llm_limit:
-            self.children.add(LLMNode(child_context))
+        self.children.add(LLMNode(child_context))
 
     def is_terminal(self) -> bool:
         """判断是否为终端节点（候选实体数量小于阈值）"""

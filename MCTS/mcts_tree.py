@@ -2,14 +2,15 @@ import math
 from collections import defaultdict
 from typing import List, Tuple
 
-from node import SearchNode
+from node import SearchNode, GraphNode, KGENode, LLMNode
+from rollout_policy import ContextualBanditRolloutPolicy
 from setup_logger import setup_logger, rank_logger
 
 
 class MCTS:
     """Monte Carlo Tree Search实现"""
 
-    def __init__(self, rank: int, exploration_weight: float = 1.0):
+    def __init__(self, rank: int, exploration_weight: float = 1.0, rollout_policy=None):
         """
         初始化MCTS
 
@@ -17,6 +18,7 @@ class MCTS:
             exploration_weight: UCT公式中的探索权重参数
         """
         self.exploration_weight = exploration_weight
+        self.rollout_policy = rollout_policy
         self.logger = setup_logger(self.__class__.__name__)
         self.reset()
         self.rank = rank
@@ -50,11 +52,16 @@ class MCTS:
         self._expand(leaf)
 
         # Step 3: Rollout - 在叶子节点或新扩展的节点上进行评估
-        rollout_results, total_budget_used = self._rollout(leaf)
+        # rollout_results, total_budget_used = self._rollout(leaf)
+        rollout_results, total_budget_used, path_taken_in_rollout = self._rollout(leaf)
 
         # Step 4: Backpropagation
         reward = self._calculate_reward(rollout_results, total_budget_used)
         self._backpropagate(path, reward)
+
+        # Step 5: Update the policy
+        if self.rollout_policy and path_taken_in_rollout:
+            self.rollout_policy.update(path_taken_in_rollout, reward)
 
         return rollout_results, total_budget_used
 
@@ -146,23 +153,57 @@ class MCTS:
         node.expand()
         self.explored.add(node)
 
-    def _rollout(self, node: SearchNode) -> Tuple[List[Tuple[str, str, str]], int]:
-        """
-        Rollout阶段：评估节点质量
+    # def _rollout(self, node: SearchNode) -> Tuple[List[Tuple[str, str, str]], int]:
+    #     """
+    #     Rollout阶段：评估节点质量
 
-        Args:
-            node: 要评估的节点
+    #     Args:
+    #         node: 要评估的节点
+
+    #     Returns:
+    #         (发现的正确三元组列表, 使用的分类器调用次数)
+    #     """
+    #     if node.is_terminal():
+    #         # 终端节点：使用分类器评估候选三元组
+    #         return node.evaluate_candidates()
+    #     else:
+    #         # 非终端节点：递归评估一个随机子节点
+    #         random_child = node.find_random_child()
+    #         return self._rollout(random_child)
+
+    def _rollout(self, node: SearchNode) -> Tuple[List[Tuple[str, str, str]], int, List[Tuple[SearchNode, type]]]:
+        """
+        Rollout阶段：使用在线学习策略（或随机策略）来评估节点质量
 
         Returns:
-            (发现的正确三元组列表, 使用的分类器调用次数)
+            (发现的正确三元组列表, 使用的分类器调用次数, 本次Rollout的决策路径)
         """
-        if node.is_terminal():
-            # 终端节点：使用分类器评估候选三元组
-            return node.evaluate_candidates()
-        else:
-            # 非终端节点：递归评估一个随机子节点
-            random_child = node.find_random_child()
-            return self._rollout(random_child)
+        current_node = node
+        rollout_path = []  # 记录(状态节点, 所选动作类)的决策路径
+
+        while not current_node.is_terminal():
+            child_context = current_node._make_child_context()
+
+            # 确定当前所有可能的动作
+            potential_actions = [GraphNode, KGENode, LLMNode]
+
+            # 如果配置了学习策略，则使用它来选择动作
+            if self.rollout_policy:
+                chosen_action_class = self.rollout_policy.get_action(current_node, potential_actions)
+            # 否则，退回至纯随机选择
+            else:
+                chosen_action_class = random.choice(potential_actions)
+
+            # 记录下这次的决策
+            rollout_path.append((current_node, chosen_action_class))
+
+            # 执行选择的动作，进入下一个状态
+            current_node = chosen_action_class(child_context)
+
+        # 到达终端节点，进行最终评估
+        results, budget_used = current_node.evaluate_candidates()
+
+        return results, budget_used, rollout_path
 
     def _calculate_reward(self, rollout_results: List[Tuple[str, str, str]], total_budget_used: int) -> float:
         """
