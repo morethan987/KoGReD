@@ -3,6 +3,7 @@ import math
 import random
 from typing import TYPE_CHECKING, List, Tuple
 
+from setup_logger import setup_logger, rank_logger
 if TYPE_CHECKING:
     from node import SearchNode
 
@@ -12,7 +13,9 @@ class ContextualBanditRolloutPolicy:
 
     这个类的实例应该在多个MCTS任务之间共享，以便积累知识。
     """
-    def __init__(self):
+    def __init__(self, rank):
+        self.logger = setup_logger(self.__class__.__name__)
+        self.rank = rank
         # 存储每个 (状态, 动作) 对的累计奖励
         # 结构: self.q_values[state_key][action_key] = total_reward
         self.q_values = defaultdict(lambda: defaultdict(float))
@@ -93,3 +96,4 @@ class ContextualBanditRolloutPolicy:
             q_old = self.q_values[state_key][action_key]
             n = self.counts[state_key][action_key]
             self.q_values[state_key][action_key] += (reward - q_old) / n
+        rank_logger(self.logger, self.rank)(f"Updated policy with reward: {reward}, path length: {len(rollout_path)}")

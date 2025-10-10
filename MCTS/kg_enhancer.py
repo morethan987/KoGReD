@@ -57,7 +57,7 @@ class KGEnhancer:
         self.exploration_weight = exploration_weight
 
         # 初始化策略类
-        self.rollout_policy = ContextualBanditRolloutPolicy()
+        self.rollout_policy = ContextualBanditRolloutPolicy(rank=self.rank)
 
         # 初始化数据加载器
         self.logger.info("Loading knowledge graph data...")
