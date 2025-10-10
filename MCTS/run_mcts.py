@@ -109,7 +109,7 @@ class Runner:
         items = list(self.processed_data.items())
         indices = shard_indices(len(items), self.rank, self.world_size)
         local_data = [items[i] for i in indices]
-        self.logger.debug(f"Rank {self.rank} processing {len(local_data)} entities.")
+        self.logger.info(f"Rank {self.rank} processing {len(local_data)} entities.")
 
         progress = tqdm(
             total=len(local_data),
@@ -165,7 +165,7 @@ class Runner:
 
         # 收集所有进程的结果
         if self.is_initialed:
-            print(f"Rank {self.rank} gathering results...")
+            self.logger.info(f"Rank {self.rank} gathering results...")
             dist.barrier()
             gathered = [None] * self.world_size if self.rank == 0 else None
             dist.gather_object(self.local_discovered_triplets, gathered, dst=0)
@@ -189,8 +189,7 @@ class Runner:
             for head, rel, tail in set(self.all_discovered_triplets):
                 f.write(f"{head}\t{rel}\t{tail}\n")
 
-        rank_logger(self.logger, self.rank)(
-            "Knowledge graph enhancement completed successfully!")
+        self.logger.info(f"Rank {self.rank}: Knowledge graph enhancement completed successfully!")
 
 
 if __name__ == "__main__":

@@ -240,7 +240,7 @@ class KGENode(SearchNode):
         # 检查缓存
         if root._kge_rank_map is None:
             # 缓存未命中
-            self.logger.info("KGENode cache miss. Calculating scores for all root candidates.")
+            rank_logger(self.logger, self.rank)("KGENode cache miss. Calculating scores for all root candidates.")
             all_candidates = root.unfiltered_entities
 
             sparse_entity_id = self.data_loader.entity2id.get(self.sparse_entity)
@@ -249,7 +249,7 @@ class KGENode(SearchNode):
             candidate_ids = [self.data_loader.entity2id[e] for e in all_candidates if e in self.data_loader.entity2id]
 
             if not candidate_ids:
-                self.logger.warning("No valid candidate entities to filter with KGE.")
+                self.logger.warning(f"Rank {self.rank}: No valid candidate entities to filter with KGE.")
                 root._kge_rank_map = {}
                 return set()
 
@@ -266,7 +266,7 @@ class KGENode(SearchNode):
                 root._kge_rank_map = {entity: i for i, entity in enumerate(sorted_entities)}
 
             except Exception as e:
-                self.logger.error(f"Error during KGE scoring: {e}")
+                self.logger.error(f"Rank {self.rank}: Error during KGE scoring: {e}")
                 root._kge_ranked_list = []
                 return set()
 
@@ -301,7 +301,7 @@ class GraphNode(SearchNode):
         # 检查根节点是否有缓存
         if root._graph_rank_map is None:
             # 缓存未命中
-            self.logger.info("GraphNode cache miss. Calculating scores and building rank map.")
+            rank_logger(self.logger, self.rank)("GraphNode cache miss. Calculating scores and building rank map.")
 
             all_candidates = root.unfiltered_entities
             sparse_neighbors = set(self.data_loader.get_one_hop_neighbors(self.sparse_entity))
@@ -433,7 +433,7 @@ class LLMNode(SearchNode):
 
         if root._llm_rank_map is None:
             # 缓存未命中
-            self.logger.info("LLMNode cache miss. Calculating scores for all root candidates.")
+            rank_logger(self.logger, self.rank)("LLMNode cache miss. Calculating scores for all root candidates.")
             all_candidates_list = list(root.unfiltered_entities)
 
             feature_embeddings = self._get_target_embedding().reshape(-1, 1)

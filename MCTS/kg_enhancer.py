@@ -6,7 +6,7 @@ from mcts_tree import MCTS
 from node import SearchRootNode, Context
 from rollout_policy import ContextualBanditRolloutPolicy
 from LLM_Discriminator.discriminator import TriplesDiscriminator
-from setup_logger import setup_logger
+from setup_logger import setup_logger, rank_logger
 
 
 class KGEnhancer:
@@ -112,13 +112,13 @@ class KGEnhancer:
         Returns:
             发现的正确三元组列表 [(head, relation, tail), ...]
         """
-        self.logger.info(
+        rank_logger(self.logger, self.rank)(
             f"Starting enhancement for {sparse_entity}-{position}-{relation}")
 
         # 获取所有候选目标实体（除了稀疏实体本身）
         candidate_entities = self.all_entities - {sparse_entity}
 
-        self.logger.info(
+        rank_logger(self.logger, self.rank)(
             f"Total candidate entities: {len(candidate_entities)}")
 
         # 构建上下文信息
@@ -149,11 +149,11 @@ class KGEnhancer:
         # MCTS搜索循环
         for iteration in range(self.mcts_iterations):
             if budget_used >= self.budget_per_entity:
-                self.logger.info(
+                rank_logger(self.logger, self.rank)(
                     f"Budget exhausted after {iteration} iterations")
                 break
 
-            self.logger.info(f"MCTS iteration {iteration + 1}/{self.mcts_iterations}, "
+            rank_logger(self.logger, self.rank)(f"MCTS iteration {iteration + 1}/{self.mcts_iterations}, "
                              f"budget used: {budget_used}/{self.budget_per_entity}")
 
             # 执行一次MCTS迭代
@@ -164,13 +164,13 @@ class KGEnhancer:
             discovered_triplets.extend(triplets_found)
             budget_used += budget_increment
 
-            self.logger.info(f"Iteration {iteration + 1} found {len(triplets_found)} triplets, "
+            rank_logger(self.logger, self.rank)(f"Iteration {iteration + 1} found {len(triplets_found)} triplets, "
                              f"used {budget_increment} budget")
 
         # 去重
         discovered_triplets = list(set(discovered_triplets))
 
-        self.logger.info(f"Enhancement completed: found {len(discovered_triplets)} unique triplets, "
+        rank_logger(self.logger, self.rank)(f"Enhancement completed: found {len(discovered_triplets)} unique triplets, "
                          f"total budget used: {budget_used}")
 
         return discovered_triplets
