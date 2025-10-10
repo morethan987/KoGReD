@@ -7,4 +7,5 @@ output/
 *.log
 release/
 auxiliary_triples.txt
+auxiliary_triples_old.txt
 true_triplets.txt
