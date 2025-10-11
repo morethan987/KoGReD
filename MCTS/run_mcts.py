@@ -73,6 +73,12 @@ class Runner:
                     # 加载已发现的三元组
                     saved_triplets = data.get("discovered_triplets", [])
                     self.local_discovered_triplets.extend(saved_triplets)
+                    # 新增：加载并恢复策略模型的状态
+                    if "rollout_policy_state" in data:
+                        policy_state = data["rollout_policy_state"]
+                        self.enhancer.rollout_policy.load_state(policy_state)
+                    else:
+                        rank_logger(self.logger, self.rank)("No rollout policy state found in checkpoint. Initializing a new policy.")
 
                 rank_logger(self.logger, self.rank)(f"Loaded checkpoint: {len(self.processed_entities)} entities processed, {len(saved_triplets)} triplets discovered.")
             except Exception as e:
@@ -80,9 +86,11 @@ class Runner:
 
     def save_checkpoint(self):
         """保存检查点"""
+        policy_state = self.enhancer.rollout_policy.get_state()
         data = {
             "processed_entities": list(self.processed_entities),
             "discovered_triplets": self.local_discovered_triplets,
+            "rollout_policy_state": policy_state,
             "entity_count": len(self.processed_entities),
             "triplet_count": len(self.local_discovered_triplets)
         }

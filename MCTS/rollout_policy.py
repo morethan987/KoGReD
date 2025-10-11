@@ -97,3 +97,24 @@ class ContextualBanditRolloutPolicy:
             n = self.counts[state_key][action_key]
             self.q_values[state_key][action_key] += (reward - q_old) / n
         rank_logger(self.logger, self.rank)(f"Updated policy with reward: {reward}, path length: {len(rollout_path)}")
+
+    def get_state(self) -> dict:
+        """
+        返回策略的当前状态，以便于序列化保存。
+        将 defaultdict 转换为普通 dict 以便 JSON 兼容。
+        """
+        return {
+            "q_values": dict(self.q_values),
+            "counts": dict(self.counts),
+            "state_total_counts": dict(self.state_total_counts),
+        }
+
+    def load_state(self, state: dict):
+        """
+        从一个字典加载策略的状态。
+        """
+        # 从加载的普通 dict 恢复 defaultdict 的内容
+        self.q_values.update(state.get("q_values", {}))
+        self.counts.update(state.get("counts", {}))
+        self.state_total_counts.update(state.get("state_total_counts", {}))
+        rank_logger(self.logger, self.rank)("Successfully loaded rollout policy state from checkpoint.")
