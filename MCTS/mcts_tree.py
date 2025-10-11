@@ -153,24 +153,6 @@ class MCTS:
         node.expand()
         self.explored.add(node)
 
-    # def _rollout(self, node: SearchNode) -> Tuple[List[Tuple[str, str, str]], int]:
-    #     """
-    #     Rollout阶段：评估节点质量
-
-    #     Args:
-    #         node: 要评估的节点
-
-    #     Returns:
-    #         (发现的正确三元组列表, 使用的分类器调用次数)
-    #     """
-    #     if node.is_terminal():
-    #         # 终端节点：使用分类器评估候选三元组
-    #         return node.evaluate_candidates()
-    #     else:
-    #         # 非终端节点：递归评估一个随机子节点
-    #         random_child = node.find_random_child()
-    #         return self._rollout(random_child)
-
     def _rollout(self, node: SearchNode) -> Tuple[List[Tuple[str, str, str]], int, List[Tuple[SearchNode, type]]]:
         """
         Rollout阶段：使用在线学习策略（或随机策略）来评估节点质量

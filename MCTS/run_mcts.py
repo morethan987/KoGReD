@@ -3,6 +3,7 @@ import sys
 import json
 import torch
 import argparse
+import threading
 from setup_logger import setup_logger, rank_logger
 from utils import init_distributed, cleanup_distributed, shard_indices, get_device
 import torch.distributed as dist
@@ -16,6 +17,7 @@ class Runner:
         self.args = args
         self.data_folder = args.data_folder
         self.logger = setup_logger(self.__class__.__name__)
+        self.checkpoint_thread = None # checkpoint保存线程
 
         # 获取分布式信息
         self.rank = int(os.environ.get("RANK", 0))
@@ -84,8 +86,42 @@ class Runner:
             except Exception as e:
                 rank_logger(self.logger, self.rank)(f"Failed to load checkpoint: {e}, starting from scratch.")
 
+    def _perform_save(self, data, filepath):
+        """实际执行保存操作的函数"""
+        try:
+            temp_filepath = filepath + ".tmp"
+            with open(temp_filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            # 使用原子操作重命名，防止保存到一半程序崩溃导致文件损坏
+            os.rename(temp_filepath, filepath)
+            rank_logger(self.logger, self.rank)(f"Checkpoint successfully saved in the background.")
+        except Exception as e:
+            rank_logger(self.logger, self.rank)(f"Background save failed: {e}")
+
+    # def save_checkpoint(self):
+    #     """保存检查点"""
+    #     policy_state = self.enhancer.rollout_policy.get_state()
+    #     data = {
+    #         "processed_entities": list(self.processed_entities),
+    #         "discovered_triplets": self.local_discovered_triplets,
+    #         "rollout_policy_state": policy_state,
+    #         "entity_count": len(self.processed_entities),
+    #         "triplet_count": len(self.local_discovered_triplets)
+    #     }
+    #     try:
+    #         with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
+    #             json.dump(data, f, ensure_ascii=False, indent=2)
+    #         rank_logger(self.logger, self.rank)(f"Checkpoint saved: {len(self.processed_entities)} entities processed, {len(self.local_discovered_triplets)} triplets discovered.")
+    #     except Exception as e:
+    #         rank_logger(self.logger, self.rank)(f"Failed to save checkpoint: {e}")
+
     def save_checkpoint(self):
-        """保存检查点"""
+        """以异步方式保存检查点，避免阻塞主进程"""
+        # 如果上一个保存线程还在运行，就跳过本次保存，防止I/O拥堵
+        if self.checkpoint_thread and self.checkpoint_thread.is_alive():
+            rank_logger(self.logger, self.rank)("Previous checkpoint save is still in progress. Skipping this one.")
+            return
+
         policy_state = self.enhancer.rollout_policy.get_state()
         data = {
             "processed_entities": list(self.processed_entities),
@@ -94,12 +130,14 @@ class Runner:
             "entity_count": len(self.processed_entities),
             "triplet_count": len(self.local_discovered_triplets)
         }
-        try:
-            with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            rank_logger(self.logger, self.rank)(f"Checkpoint saved: {len(self.processed_entities)} entities processed, {len(self.local_discovered_triplets)} triplets discovered.")
-        except Exception as e:
-            rank_logger(self.logger, self.rank)(f"Failed to save checkpoint: {e}")
+
+        # 创建并启动一个后台线程来执行保存操作
+        self.checkpoint_thread = threading.Thread(
+            target=self._perform_save,
+            args=(data, self.checkpoint_file)
+        )
+        self.checkpoint_thread.start()
+        rank_logger(self.logger, self.rank)(f"Checkpoint saving initiated in the background...")
 
     def get_unprocessed(self, device_num: int):
         """过滤掉已经处理过的实体"""
@@ -170,6 +208,12 @@ class Runner:
 
         # 保存最终检查点
         self.save_checkpoint()
+
+        # 等待最后的后台保存任务完成
+        if self.checkpoint_thread and self.checkpoint_thread.is_alive():
+            rank_logger(self.logger, self.rank)("Waiting for the final checkpoint save to complete...")
+            self.checkpoint_thread.join() # join()会阻塞主进程，直到线程结束
+            rank_logger(self.logger, self.rank)("Final checkpoint save completed.")
 
         # 收集所有进程的结果
         if self.is_initialed:
