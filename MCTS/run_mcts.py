@@ -233,6 +233,7 @@ class Runner:
         output_path = os.path.join(
             self.args.output_folder, "discovered_triplets.txt"
         )
+        self.all_discovered_triplets = set(tuple(triplet) for triplet in self.all_discovered_triplets)
         os.makedirs(self.args.output_folder, exist_ok=True)
         rank_logger(self.logger, self.rank)(
             f"\nSaving {len(self.all_discovered_triplets)} discovered triplets to {output_path}"
