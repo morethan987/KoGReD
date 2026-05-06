@@ -3,7 +3,7 @@
 # 使用方法:
 #   bash scripts/visualize_suppression.sh                                     # 默认: CoDEx-S 最新运行
 #   bash scripts/visualize_suppression.sh CoDEx-S
-#   bash scripts/visualize_suppression.sh CoDEx-S 20260425_134207            # 指定时间戳
+#   bash scripts/visualize_suppression.sh CoDEx-S 20260503_155855            # 指定时间戳
 
 DATASET="${1:-CoDEx-S}"
 

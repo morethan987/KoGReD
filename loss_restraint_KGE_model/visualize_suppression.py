@@ -169,7 +169,7 @@ def plot_confidence_histogram(bin_config, loss_summary, output_dir):
         else:
             text_y = 0
 
-        ax.text(lo + width / 2, text_y, f"{short}\nn={n}",
+        ax.text(lo + width / 2, text_y, short,
                 ha='center', va='center', fontsize=9, fontweight='bold')
 
     for b in boundaries[1:-1]:
@@ -225,8 +225,8 @@ def plot_drop_rate_vs_confidence(loss_summary, bin_config, output_dir):
     colors = [REGION_COLORS.get(lbl['region'], '#888888') for lbl in labels_list]
     bars = ax.bar(range(n), means, color=colors, edgecolor='black', linewidth=0.8, width=0.7)
 
-    xtick_labels =[f"{_short_label(lbl['key'], labels_list)}\n[{lbl['lo']:.2f}, {lbl['hi']:.2f})\nn={s}"
-                    for lbl, s in zip(labels_list, sample_sizes)]
+    xtick_labels = [f"{_short_label(lbl['key'], labels_list)}\n[{lbl['lo']:.2f}, {lbl['hi']:.2f})"
+                    for lbl in labels_list]
 
     ax.set_xticks(range(n))
     ax.set_xticklabels(xtick_labels, fontsize=9)
@@ -277,7 +277,7 @@ def plot_alpha_distribution(alpha_summary, alpha_raw, bin_config, loss_summary, 
             if not vals: continue
 
             short_lbl = "原始" if g == 'original' else _short_label(g, labels_list)
-            plot_labels.append(f"{short_lbl}\n(n={len(vals)})")
+            plot_labels.append(short_lbl)
             plot_data.append(vals)
             colors.append(color_map.get(g, '#888888'))
 
@@ -350,7 +350,7 @@ def plot_alpha_distribution(alpha_summary, alpha_raw, bin_config, loss_summary, 
         print(f"Saved: {path}")
 
 
-def plot_training_dynamics_loss(loss_summary, bin_config, output_dir):
+def plot_training_dynamics_loss(loss_summary, bin_config, output_dir, smooth=False):
     """fig3a: 损失抑制动态"""
     fig, ax1 = plt.subplots(figsize=(8, 6))
 
@@ -376,7 +376,8 @@ def plot_training_dynamics_loss(loss_summary, bin_config, output_dir):
             line_color = color_map.get(b, '#888888')
 
             ax1.plot(epochs, drop_rates, alpha=0.15, linewidth=0.8, color=line_color)
-            ax1.plot(epochs, _smooth(drop_rates), linewidth=2, color=line_color, label=f"{short} (n={n})")
+            smoothed = _smooth(drop_rates) if smooth else drop_rates
+            ax1.plot(epochs, smoothed, linewidth=1, color=line_color, label=short)
 
         ax1.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
         ax1.set_xlabel('轮次')
@@ -391,7 +392,7 @@ def plot_training_dynamics_loss(loss_summary, bin_config, output_dir):
     print(f"Saved: {path}")
 
 
-def plot_training_dynamics_alpha(alpha_summary, bin_config, output_dir):
+def plot_training_dynamics_alpha(alpha_summary, bin_config, output_dir, smooth=True):
     """fig3b: 自适应聚合动态"""
     fig, ax2 = plt.subplots(figsize=(8, 6))
 
@@ -417,10 +418,11 @@ def plot_training_dynamics_alpha(alpha_summary, bin_config, output_dir):
             alphas = [r['alpha_mean'] for r in records]
 
             line_color = color_map.get(g, '#888888')
-            label = f"原始 (n={records[0]['count']})" if g == 'original' else _short_label(g, labels_list)
+            label = "原始" if g == 'original' else _short_label(g, labels_list)
 
             ax2.plot(epochs, alphas, alpha=0.15, linewidth=0.8, color=line_color)
-            ax2.plot(epochs, _smooth(alphas), linewidth=2, color=line_color, label=label)
+            smoothed = _smooth(alphas) if smooth else alphas
+            ax2.plot(epochs, smoothed, linewidth=1.5, color=line_color, label=label)
 
         ax2.set_xlabel('轮次')
         ax2.set_ylabel('平均注意力权重')
@@ -537,7 +539,7 @@ def plot_neighborhood_kl_distribution(neighborhood_raw, output_dir):
         p99 = np.percentile(kl_vals, 99)
         kl_clipped = np.clip(kl_vals, 0, p99)
         color = NEIGHBORHOOD_COLORS.get(region, '#888888')
-        label = f"{region} (n={len(kl_vals)}, median={np.median(kl_vals):.4f})"
+        label = f"{region} (median={np.median(kl_vals):.4f})"
         sns.kdeplot(kl_clipped, ax=ax, color=color, label=label,
                     linewidth=2, fill=True, alpha=0.15)
 
@@ -579,7 +581,7 @@ def plot_neighborhood_maxratio_boxplot(neighborhood_raw, output_dir):
         plot_data.append(clipped)
         n = len(mr_vals)
         median = np.median(mr_vals)
-        plot_labels.append(f"{region}\nn={n}\nmed={median:.2f}")
+        plot_labels.append(f"{region}\nmed={median:.2f}")
         colors.append(NEIGHBORHOOD_COLORS.get(region, '#888888'))
 
     bp = ax.boxplot(plot_data, patch_artist=True, widths=0.6,
@@ -606,7 +608,7 @@ def plot_neighborhood_maxratio_boxplot(neighborhood_raw, output_dir):
     print(f"Saved: {path}")
 
 
-def plot_attention_deviation_kl(neighborhood_summary, output_dir):
+def plot_attention_deviation_kl(neighborhood_summary, output_dir, smooth=True):
     """fig7a: Mean KL divergence over training epochs"""
     if not neighborhood_summary:
         return
@@ -624,10 +626,11 @@ def plot_attention_deviation_kl(neighborhood_summary, output_dir):
         n = records[-1]['node_count']
 
         color = NEIGHBORHOOD_COLORS.get(region, '#888888')
-        label = f"{region} (n~{n})"
+        label = region
 
         ax1.plot(epochs, kl_means, alpha=0.15, linewidth=0.8, color=color)
-        ax1.plot(epochs, _smooth(kl_means), linewidth=2, color=color, label=label)
+        smoothed = _smooth(kl_means) if smooth else kl_means
+        ax1.plot(epochs, smoothed, linewidth=1.5, color=color, label=label)
 
     ax1.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
     ax1.set_xlabel('轮次')
@@ -642,7 +645,7 @@ def plot_attention_deviation_kl(neighborhood_summary, output_dir):
     print(f"Saved: {path}")
 
 
-def plot_attention_deviation_cv(neighborhood_summary, output_dir):
+def plot_attention_deviation_cv(neighborhood_summary, output_dir, smooth=True):
     """fig7b: CV over training epochs"""
     if not neighborhood_summary:
         return
@@ -660,10 +663,11 @@ def plot_attention_deviation_cv(neighborhood_summary, output_dir):
         n = records[-1]['node_count']
 
         color = NEIGHBORHOOD_COLORS.get(region, '#888888')
-        label = f"{region} (n~{n})"
+        label = region
 
         ax2.plot(epochs, cv_means, alpha=0.15, linewidth=0.8, color=color)
-        ax2.plot(epochs, _smooth(cv_means), linewidth=2, color=color, label=label)
+        smoothed = _smooth(cv_means) if smooth else cv_means
+        ax2.plot(epochs, smoothed, linewidth=1.5, color=color, label=label)
 
     ax2.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
     ax2.set_xlabel('轮次')

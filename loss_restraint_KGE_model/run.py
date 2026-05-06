@@ -645,7 +645,7 @@ class Runner(object):
                     self.p.gamma -= 5
                     self.logger.info(
                         'Gamma decay on saturation, updated value of gamma: {}'.format(self.p.gamma))
-                if kill_cnt > 25:
+                if kill_cnt > 45:
                     self.logger.info("Early Stopping!!")
                     break
 
@@ -1031,7 +1031,7 @@ if __name__ == '__main__':
 
     # Modify Loss-
     parser.add_argument('--loss_delta',	dest='loss_delta', default=-1, type=float, help='hyperparameter that determines the speed of increase of rejection rate')
-    parser.add_argument('--keep_aux',	dest='keep_aux', default=True, type=bool, help='Whether to keep the auxiliary triples')
+    parser.add_argument('--keep_aux',	dest='keep_aux', default=True, type=lambda x: x.lower() in ('true', '1', 'yes'), help='Whether to keep the auxiliary triples')
     parser.add_argument('--loss_only_new', dest='loss_only_new', default=1, type=float, help='only modify the loss of the added auxiliary triples')
     parser.add_argument('--aux_triples', dest='aux_triples', default=None, type=str, help='Path to auxiliary_triples.txt')
     parser.add_argument('--aux_confidence', dest='aux_confidence', default=None, type=str, help='Path to auxiliary_triples_confidence.json')

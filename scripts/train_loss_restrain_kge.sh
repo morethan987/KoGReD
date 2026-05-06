@@ -26,8 +26,8 @@ case "$DATASET" in
     CoDEx-S)
         NAME='codex_train'
         OUTPUT_BASE='loss_restraint_KGE_model/output/codex-s'
-        AUX_TRIPLES="MCTS/output/codex-s-llm/20260501_033054/discovered_triplets.txt"
-        AUX_CONFIDENCE="MCTS/output/codex-s-llm/20260501_033054/auxiliary_triples_confidence_kgbert.json"
+        AUX_TRIPLES="MCTS/output/codex-s-llm/20260503_114800/discovered_triplets.txt"
+        AUX_CONFIDENCE="MCTS/output/codex-s-llm/20260503_114800/auxiliary_triples_confidence_kgbert.json"
         ;;
     FB15k-237N)
         NAME='fb15k_train'
@@ -94,10 +94,10 @@ nohup python loss_restraint_KGE_model/run.py \
     --score_func conve \
     --opn corr \
     --adapt_aggr 1 \
-    --loss_delta 0.002 \
+    --loss_delta 0.05 \
     --batch 256 \
     --lr 5e-4 \
-    --epoch 500 \
+    --epoch 10000 \
     --aux_triples "$AUX_TRIPLES" \
     --aux_confidence "$AUX_CONFIDENCE" \
     >> "$LOG_FILE" 2>&1 &
@@ -112,5 +112,6 @@ PID=$!
     echo "置信度文件: $AUX_CONFIDENCE"
     echo "查看日志: tail -f $LOG_FILE"
     echo "停止进程: kill $PID"
+    echo "备注：超参数实验：0.5 0.05"
     echo "========================================================="
 } | tee -a "$LOG_FILE"
