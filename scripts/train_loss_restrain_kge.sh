@@ -32,8 +32,8 @@ case "$DATASET" in
     FB15k-237N)
         NAME='fb15k_train'
         OUTPUT_BASE='loss_restraint_KGE_model/output/fb15k-237n'
-        AUX_TRIPLES="MCTS/output/fb15k-237n-kge/20260425_215000/discovered_triplets.txt"
-        AUX_CONFIDENCE="MCTS/output/fb15k-237n-kge/20260425_215000/auxiliary_triples_confidence_kgbert.json"
+        AUX_TRIPLES="MCTS/output/fb15k-237n-llm/20251027_102839/discovered_triplets.txt"
+        AUX_CONFIDENCE=""
         ;;
 esac
 
@@ -53,7 +53,7 @@ if [ ! -f "$AUX_TRIPLES" ]; then
     exit 1
 fi
 
-if [ ! -f "$AUX_CONFIDENCE" ]; then
+if [ -n "$AUX_CONFIDENCE" ] && [ ! -f "$AUX_CONFIDENCE" ]; then
     echo "错误: 未找到置信度文件: $AUX_CONFIDENCE"
     echo "请先运行 MCTS 生成置信度文件"
     exit 1
@@ -64,7 +64,7 @@ echo "=== Loss Restrain KGE Configuration ==="
 echo "数据集:          $DATASET"
 echo "输出目录:        $OUTPUT_DIR"
 echo "辅助三元组:      $AUX_TRIPLES"
-echo "置信度文件:      $AUX_CONFIDENCE"
+echo "置信度文件:      ${AUX_CONFIDENCE:-无(跳过数据采集)}"
 echo "========================================="
 echo ""
 echo "=== 输出文件位置 ==="
@@ -99,7 +99,7 @@ nohup python loss_restraint_KGE_model/run.py \
     --lr 5e-4 \
     --epoch 10000 \
     --aux_triples "$AUX_TRIPLES" \
-    --aux_confidence "$AUX_CONFIDENCE" \
+    ${AUX_CONFIDENCE:+--aux_confidence "$AUX_CONFIDENCE"} \
     >> "$LOG_FILE" 2>&1 &
 
 PID=$!
@@ -109,9 +109,9 @@ PID=$!
     echo "数据集: $DATASET    日志文件: $LOG_FILE"
     echo "输出目录: $OUTPUT_DIR"
     echo "辅助三元组: $AUX_TRIPLES"
-    echo "置信度文件: $AUX_CONFIDENCE"
+    echo "置信度文件: ${AUX_CONFIDENCE:-无(跳过数据采集)}"
     echo "查看日志: tail -f $LOG_FILE"
     echo "停止进程: kill $PID"
-    echo "备注：超参数实验：0.5 0.05"
+    echo "备注：FB15k-237N重新实验：1.0 0.05"
     echo "========================================================="
 } | tee -a "$LOG_FILE"

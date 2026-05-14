@@ -215,8 +215,8 @@ class Runner(object):
     def _load_confidence_map(self):
         """加载辅助三元组置信度映射，返回 {(h_id, r_id, t_id): confidence}"""
         conf_path = self.p.aux_confidence
-        if not os.path.isfile(conf_path):
-            self.logger.info(f'Confidence map not found at {conf_path}, metrics collection disabled')
+        if not conf_path or not os.path.isfile(conf_path):
+            self.logger.info('Confidence map not provided or not found, metrics collection disabled')
             return {}
         self.logger.info(f'Loading confidence map from: {conf_path}')
         with open(conf_path, 'r', encoding='utf-8') as f:

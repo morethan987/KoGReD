@@ -239,18 +239,18 @@ if __name__ == "__main__":
     # folder = "data/FB15k-237N"
     # cleanup_entity2name(folder)
 
-    # file1 = "data/FB15k-237N/test.txt"
+    file1 = "data/FB15k-237N/test.txt"
     # file2 = "data/FB15k-237N/valid.txt"
-    # file3 = "data/FB15k-237N/auxiliary_triples.txt"
+    file3 = "MCTS/output/fb15k-237n-llm/20251027_102839/discovered_triplets.txt"
     # file4 = "data/FB15k-237N/auxiliary_triples_old.txt"
     # fb_merged_file = "data/FB15k-237N/merged_triples.txt"
 
-    file5 = "data/CoDEx-S/test.txt"
+    # file5 = "data/CoDEx-S/test.txt"
     # file6 = "data/CoDEx-S/valid.txt"
-    file7 = "MCTS/output/codex-s-llm/20260501_033054/discovered_triplets.txt"
+    # file7 = "MCTS/output/codex-s-llm/20260501_033054/discovered_triplets.txt"
     # file8 = "data/CoDEx-S/auxiliary_triples_old.txt"
     # codex_merged_file = "data/CoDEx-S/merged_auxiliary_triples.txt"
-    kg_similarity(file5, file7)
+    kg_similarity(file1, file3)
 
     # head = "/m/0m0bj"
     # tail = "/m/01tzfz"
