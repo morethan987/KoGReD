@@ -6,7 +6,7 @@
 #   bash scripts/train_loss_restrain_kge.sh FB15k-237N
 #
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2
 
 # ==================== 参数解析 ====================
 DATASET="${1:-CoDEx-S}"
@@ -112,6 +112,5 @@ PID=$!
     echo "置信度文件: ${AUX_CONFIDENCE:-无(跳过数据采集)}"
     echo "查看日志: tail -f $LOG_FILE"
     echo "停止进程: kill $PID"
-    echo "备注：FB15k-237N重新实验：1.0 0.05"
     echo "========================================================="
 } | tee -a "$LOG_FILE"

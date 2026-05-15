@@ -868,6 +868,50 @@ class Runner(object):
                 entt2deg[self.ent2id[t]] += 1
         return entt2deg
 
+    def test_inference_time(self):
+        """
+        测试模型在测试集上的推理时间消耗，计算平均每条查询的耗时（毫秒）
+        """
+        import time
+
+        save_path = os.path.join(self.p.save_dir, self.p.name + '.pth')
+        if self.p.restore:
+            self.load_model(save_path)
+            self.logger.info('Successfully Loaded previous model')
+
+        self.model.eval()
+
+        total_queries = 0
+        total_ms = 0.0
+
+        with torch.no_grad():
+            for mode in ['tail_batch', 'head_batch']:
+                split_key = f'test_{mode.split("_")[0]}'
+                train_iter = iter(self.data_iter[split_key])
+
+                for step, batch in enumerate(train_iter):
+                    sub, rel, obj, label = self.read_batch(batch, 'test')
+
+                    torch.cuda.synchronize(self.device) if self.device.type == 'cuda' else None
+                    t0 = time.perf_counter()
+
+                    _ = self.model.forward(sub, rel)
+
+                    torch.cuda.synchronize(self.device) if self.device.type == 'cuda' else None
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+                    batch_size = sub.size(0)
+                    total_queries += batch_size
+                    total_ms += elapsed_ms
+
+                self.logger.info(f'[{mode}] total: {total_ms:.2f} ms, queries: {total_queries}')
+
+        avg_ms = total_ms / total_queries if total_queries > 0 else 0
+        self.logger.info(f'\nInference Time Benchmark:')
+        self.logger.info(f'  Total queries: {total_queries}')
+        self.logger.info(f'  Total time: {total_ms:.2f} ms')
+        self.logger.info(f'  Avg per query: {avg_ms:.4f} ms')
+
     def case_study(self):
         """
         对具体的三元组进行案例分析，展示模型的预测能力
@@ -991,7 +1035,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
     description='Parser For Arguments', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--name', dest='name', default='testrun', help='Set run name for saving/restoring models')
-    parser.add_argument('--mode', dest='mode', default=None, choices=['train', 'overall', 'test_relation_type', 'test_entity_degree', 'case_study'], help='Set the mode for runner')
+    parser.add_argument('--mode', dest='mode', default=None, choices=['train', 'overall', 'test_relation_type', 'test_entity_degree', 'case_study', 'inference_time'], help='Set the mode for runner')
     parser.add_argument('--data', dest='dataset', default='FB15k-237', help='Dataset to use, default: FB15k-237')
     parser.add_argument('--model', dest='model', default='compgcn', help='Model Name')
     parser.add_argument('--score_func', dest='score_func', default='conve', help='Score Function for Link prediction')
@@ -1042,7 +1086,7 @@ if __name__ == '__main__':
         ckpt_path = os.path.join(args.save_dir, args.name + '.pth')
         if os.path.isfile(ckpt_path):
             ckpt_args = torch.load(ckpt_path, map_location='cpu').get('args', {})
-            restore_only_modes = {'overall', 'test_relation_type', 'test_entity_degree', 'case_study'}
+            restore_only_modes = {'overall', 'test_relation_type', 'test_entity_degree', 'case_study', 'inference_time'}
             if args.mode in restore_only_modes:
                 for k, v in ckpt_args.items():
                     if not hasattr(args, k):
@@ -1072,5 +1116,7 @@ if __name__ == '__main__':
         runner.test_entity_degree()
     elif args.mode == 'case_study':
         runner.case_study()
+    elif args.mode == 'inference_time':
+        runner.test_inference_time()
     else:
         print("You should set a mode for runner")
