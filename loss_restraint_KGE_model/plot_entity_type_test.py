@@ -2,8 +2,7 @@
 # 使用:
 # python loss_restraint_KGE_model/plot_entity_type_test.py
 
-# Entity performance: [0.31, 0.20, 0.19, 0.38, 0.46, 0.68, 0.53, 0.71]
-
+# StructKGC 的结果如下：
 # ---------------------------------------------------------------------------------------------------------
 # Degree Range    | Samples    | Entities(Uniq)  | MRR      | Hits@1   | Hits@10
 # ---------------------------------------------------------------------------------------------------------
@@ -20,9 +19,10 @@
 # Total Unique Entities Evaluated:     6544
 # ====================================================================================================
 
-# [4163, 2426, 1763, 2514, 977, 921, 741, 2947]
-# [2998, 1443, 907, 916, 151, 70, 27, 32]
-# [0.30, 0.17, 0.15, 0.24, 0.42, 0.47, 0.48, 0.61]
+# SynKGR 的结果如下：
+# [4163, 2426, 1763, 2514, 977, 921, 741, 2947] # 没有去重的样本数量
+# [2998, 1443, 907, 916, 151, 70, 27, 32] # 经过去重后的实体数量
+# [0.35, 0.24, 0.23, 0.45, 0.57, 0.75, 0.58, 0.75]
 
 import matplotlib.pyplot as plt
 import os
@@ -43,24 +43,24 @@ else:
 rcParams['axes.unicode_minus'] = False
 
 # --- 2. 准备数据 ---
-# 原始8区间: [0,10) [10,15) [15,20) [20,50) [50,100) [100,200) [200,350) [350,max]
 _raw_samples = [4163, 2426, 1763, 2514, 977, 921, 741, 2947]
-_raw_entities = [2998, 1443, 907, 916, 151, 70, 27, 32]
-_raw_synkgr = [0.31, 0.20, 0.19, 0.38, 0.46, 0.68, 0.53, 0.71]
+_raw_synkgr = [0.35, 0.24, 0.23, 0.45, 0.57, 0.75, 0.58, 0.75]
 _raw_structkgc = [0.30, 0.17, 0.15, 0.24, 0.42, 0.47, 0.48, 0.61]
+
+_raw_entities = [2998, 1443, 907, 916, 151, 70, 27, 32]
+
+_merge_groups = [
+    ([0], '[0, 10)'),
+    ([1], '[10, 15)'),
+    ([2], '[15, 20)'),
+    ([3], '[20, 50)'),
+    ([4], '[50, 100)'),
+    ([5, 6, 7], '[100, max]'),
+]
 
 def _wmrr(indices, vals, weights):
     w = sum(weights[i] for i in indices)
     return sum(vals[i] * weights[i] for i in indices) / w
-
-# 合并区间: [0,50) 合并稀疏端, 其余保持
-_merge_groups = [
-    ([0, 1, 2, 3], '[0, 50)'),
-    ([4], '[50, 100)'),
-    ([5], '[100, 200)'),
-    ([6], '[200, 350)'),
-    ([7], '[350, max)'),
-]
 
 degree_of_entities = [label for _, label in _merge_groups]
 samples = [sum(_raw_entities[i] for i in idx) for idx, _ in _merge_groups]
@@ -96,10 +96,10 @@ for x, y in zip(degree_of_entities, synkgr_mrr):
 # 设置标签和范围
 ax1.set_xlabel('实体度数 (Entity Degree)', fontsize=14)
 ax1.set_ylabel('平均倒数排名 (MRR)', fontsize=14)
-ax1.set_ylim(0.1, 0.8)
+ax1.set_ylim(0.1, 0.9)
 
 ax2.set_ylabel('实体数量', fontsize=14)
-ax2.set_ylim(0, 3500)
+ax2.set_ylim(0, 4000)
 
 # 网格线
 ax1.grid(visible=True, which='major', linestyle='--', linewidth=0.5, color='gray', alpha=0.3, zorder=0)

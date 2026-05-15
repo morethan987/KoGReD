@@ -1038,6 +1038,23 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    if args.restore:
+        ckpt_path = os.path.join(args.save_dir, args.name + '.pth')
+        if os.path.isfile(ckpt_path):
+            ckpt_args = torch.load(ckpt_path, map_location='cpu').get('args', {})
+            restore_only_modes = {'overall', 'test_relation_type', 'test_entity_degree', 'case_study'}
+            if args.mode in restore_only_modes:
+                for k, v in ckpt_args.items():
+                    if not hasattr(args, k):
+                        setattr(args, k, v)
+                    elif k == 'name' or k == 'mode' or k == 'restore' or k == 'save_dir':
+                        continue
+                    else:
+                        setattr(args, k, v)
+                print(f'\n[Auto-restore] Parameters loaded from checkpoint: {ckpt_path}')
+        else:
+            print(f'Warning: Checkpoint not found at {ckpt_path}')
+
     if not args.restore:
         args.name = args.name + '_' + args.time_string
 
