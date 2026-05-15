@@ -87,11 +87,11 @@ class StrategyRunner:
             rank=self.rank,
         )
 
-        triplet_discriminator = self._create_discriminator()
+        triplet_discriminator = self._create_discriminator(data_loader)
 
         return data_loader, kge_model, triplet_discriminator
 
-    def _create_discriminator(self):
+    def _create_discriminator(self, data_loader):
         dtype_map = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}
         torch_dtype = dtype_map.get(self.args.dtype, torch.float32)
 
@@ -107,7 +107,7 @@ class StrategyRunner:
                 dtype=torch_dtype,
                 batch_size=16,
             )
-            calibration_data = self._prepare_calibration_data()
+            calibration_data = self._prepare_calibration_data(data_loader)
             if calibration_data:
                 import random as _random
                 max_calibration = 2000
@@ -126,8 +126,8 @@ class StrategyRunner:
                 device=self.device,
             )
             discriminator.set_id_mappings(
-                id2entity=self.data_loader.id2entity,
-                id2relation=self.data_loader.id2relation,
+                id2entity=data_loader.id2entity,
+                id2relation=data_loader.id2relation,
             )
             return discriminator
 
@@ -147,16 +147,16 @@ class StrategyRunner:
         else:
             raise ValueError(f"Unknown discriminator type: {disc_type}")
 
-    def _prepare_calibration_data(self, num_neg_per_positive: int = 10):
+    def _prepare_calibration_data(self, data_loader, num_neg_per_positive: int = 10):
         import random
 
         valid_path = f"{self.data_folder}/valid.txt"
         if not os.path.isfile(valid_path):
             return []
 
-        entity2id = self.data_loader.entity2id
-        relation2id = self.data_loader.relation2id
-        entity2name = self.data_loader.entity2name
+        entity2id = data_loader.entity2id
+        relation2id = data_loader.relation2id
+        entity2name = data_loader.entity2name
         all_entity_ids = list(entity2id.values())
 
         calibration_samples = []
@@ -188,7 +188,7 @@ class StrategyRunner:
                     neg_t_id = random.choice(all_entity_ids)
                     if neg_t_id == t_id:
                         continue
-                    neg_t_str = self.data_loader.id2entity.get(neg_t_id, "")
+                    neg_t_str = data_loader.id2entity.get(neg_t_id, "")
                     if not neg_t_str:
                         continue
                     neg_input_text = "The input triple: \n( {head}, {rel}, {tail} )\n".format(
